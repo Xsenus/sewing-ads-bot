@@ -8,6 +8,7 @@ import Moderation from './pages/Moderation';
 import TelegramAdmins from './pages/TelegramAdmins';
 import Settings from './pages/Settings';
 import AdminAccounts from './pages/AdminAccounts';
+import Bots from './pages/Bots';
 
 /**
  * Роутер админки.
@@ -17,6 +18,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/" element={<Home />} />
+      <Route path="/bots" element={<Bots />} />
       <Route path="/categories" element={<Categories />} />
       <Route path="/channels" element={<Channels />} />
       <Route path="/moderation" element={<Moderation />} />

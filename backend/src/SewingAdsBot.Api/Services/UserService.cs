@@ -149,6 +149,21 @@ public sealed class UserService
     private static string GenerateReferralCode(long telegramUserId)
     {
         // Достаточно короткий и уникальный код.
-        return Convert.ToString(telegramUserId, 36).ToUpperInvariant();
+        const string alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        if (telegramUserId <= 0)
+            return "0";
+
+        var value = telegramUserId;
+        Span<char> buffer = stackalloc char[32];
+        var position = buffer.Length;
+
+        while (value > 0)
+        {
+            var idx = (int)(value % 36);
+            buffer[--position] = alphabet[idx];
+            value /= 36;
+        }
+
+        return new string(buffer[position..]);
     }
 }

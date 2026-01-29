@@ -134,6 +134,31 @@ export type AdminAccount = {
 };
 
 /**
+ * Telegram бот.
+ */
+export type TelegramBot = {
+  id: string;
+  name?: string | null;
+  username?: string | null;
+  telegramUserId: number;
+  description?: string | null;
+  shortDescription?: string | null;
+  commands?: { command?: string | null; description?: string | null }[] | null;
+  status: number;
+  trackMessagesEnabled: boolean;
+  photoFileId?: string | null;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+  lastError?: string | null;
+  lastErrorAtUtc?: string | null;
+};
+
+/**
+ * Каналы, где бот админ.
+ */
+export type BotChannel = ChannelDto;
+
+/**
  * Логин и получение JWT.
  */
 export async function login(username: string, password: string): Promise<string> {
@@ -319,4 +344,84 @@ export async function setAdminAccountActive(id: string, isActive: boolean): Prom
 
 export function getApiUrl(): string {
   return API_URL;
+}
+
+// --- Bots ---
+
+export async function getBots(): Promise<TelegramBot[]> {
+  return await request<TelegramBot[]>('/api/admin/bots');
+}
+
+export async function createBot(token: string, cloneFromBotId?: string): Promise<TelegramBot> {
+  return await request<TelegramBot>('/api/admin/bots', {
+    method: 'POST',
+    body: JSON.stringify({ token, cloneFromBotId }),
+  });
+}
+
+export async function pauseBot(id: string): Promise<{ message: string }> {
+  return await request<{ message: string }>(`/api/admin/bots/${id}/pause`, { method: 'POST' });
+}
+
+export async function resumeBot(id: string): Promise<{ message: string }> {
+  return await request<{ message: string }>(`/api/admin/bots/${id}/resume`, { method: 'POST' });
+}
+
+export async function disableBot(id: string): Promise<{ message: string }> {
+  return await request<{ message: string }>(`/api/admin/bots/${id}/disable`, { method: 'POST' });
+}
+
+export async function restartBot(id: string): Promise<{ message: string }> {
+  return await request<{ message: string }>(`/api/admin/bots/${id}/restart`, { method: 'POST' });
+}
+
+export async function refreshBot(id: string): Promise<TelegramBot> {
+  return await request<TelegramBot>(`/api/admin/bots/${id}/refresh`, { method: 'POST' });
+}
+
+export async function deleteBot(id: string): Promise<{ message: string }> {
+  return await request<{ message: string }>(`/api/admin/bots/${id}`, { method: 'DELETE' });
+}
+
+export async function getBotChannels(id: string): Promise<BotChannel[]> {
+  return await request<BotChannel[]>(`/api/admin/bots/${id}/channels`);
+}
+
+export async function updateBotProfile(id: string, payload: {
+  name?: string;
+  description?: string;
+  shortDescription?: string;
+  commandsJson?: string;
+  trackMessagesEnabled?: boolean;
+  photo?: File | null;
+}): Promise<TelegramBot> {
+  const form = new FormData();
+  if (payload.name !== undefined) form.append('name', payload.name);
+  if (payload.description !== undefined) form.append('description', payload.description);
+  if (payload.shortDescription !== undefined) form.append('shortDescription', payload.shortDescription);
+  if (payload.commandsJson !== undefined) form.append('commandsJson', payload.commandsJson);
+  if (payload.trackMessagesEnabled !== undefined) {
+    form.append('trackMessagesEnabled', payload.trackMessagesEnabled ? 'true' : 'false');
+  }
+  if (payload.photo) form.append('photo', payload.photo);
+
+  const token = getToken();
+  const res = await fetch(`${API_URL}/api/admin/bots/${id}/profile`, {
+    method: 'PUT',
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    body: form,
+  });
+
+  if (!res.ok) {
+    let msg = res.statusText;
+    try {
+      const json = await res.json();
+      msg = json?.message ?? JSON.stringify(json);
+    } catch {
+      // ignore
+    }
+    throw new ApiError(res.status, msg);
+  }
+
+  return (await res.json()) as TelegramBot;
 }
