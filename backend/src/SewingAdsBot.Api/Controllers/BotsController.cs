@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SewingAdsBot.Api.Data;
@@ -21,6 +22,7 @@ public sealed class BotsController : ControllerBase
 {
     private readonly AppDbContext _db;
     private readonly TelegramBotMetadataService _metadataService;
+    private readonly TelegramBotProfileService _profileService;
     private readonly TelegramBotRuntimeManager _runtimeManager;
 
     /// <summary>
@@ -29,10 +31,12 @@ public sealed class BotsController : ControllerBase
     public BotsController(
         AppDbContext db,
         TelegramBotMetadataService metadataService,
+        TelegramBotProfileService profileService,
         TelegramBotRuntimeManager runtimeManager)
     {
         _db = db;
         _metadataService = metadataService;
+        _profileService = profileService;
         _runtimeManager = runtimeManager;
     }
 
@@ -86,9 +90,32 @@ public sealed class BotsController : ControllerBase
             PhotoFileId = metadata.PhotoFileId,
             PhotoFilePath = metadata.PhotoFilePath,
             Status = TelegramBotStatus.Active,
+            TrackMessagesEnabled = true,
             CreatedAtUtc = DateTime.UtcNow,
             UpdatedAtUtc = DateTime.UtcNow
         };
+
+        if (request.CloneFromBotId.HasValue)
+        {
+            var sourceBot = await _db.TelegramBots.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == request.CloneFromBotId.Value, ct);
+
+            if (sourceBot == null)
+                return BadRequest(new { message = "Бот для копирования не найден." });
+
+            bot.Name = sourceBot.Name ?? bot.Name;
+            bot.Description = sourceBot.Description;
+            bot.ShortDescription = sourceBot.ShortDescription;
+            bot.CommandsJson = sourceBot.CommandsJson;
+            bot.TrackMessagesEnabled = sourceBot.TrackMessagesEnabled;
+
+            var commands = ParseCommands(sourceBot.CommandsJson);
+            await _profileService.ApplyProfileAsync(bot.Token, new TelegramBotProfileUpdate(
+                bot.Name,
+                bot.Description,
+                bot.ShortDescription,
+                commands), ct);
+        }
 
         _db.TelegramBots.Add(bot);
         await _db.SaveChangesAsync(ct);
@@ -272,6 +299,48 @@ public sealed class BotsController : ControllerBase
     }
 
     /// <summary>
+    /// Обновить профиль и настройки бота.
+    /// </summary>
+    [HttpPut("{id:guid}/profile")]
+    public async Task<ActionResult<TelegramBotDto>> UpdateProfile(Guid id, [FromForm] UpdateBotProfileRequest request, CancellationToken ct)
+    {
+        var bot = await _db.TelegramBots.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (bot == null)
+            return NotFound(new { message = "Бот не найден." });
+
+        var commands = ParseCommands(request.CommandsJson);
+        await _profileService.ApplyProfileAsync(bot.Token, new TelegramBotProfileUpdate(
+            request.Name,
+            request.Description,
+            request.ShortDescription,
+            commands), ct);
+
+        if (request.Photo != null)
+            await _profileService.SetProfilePhotoAsync(bot.Token, request.Photo, ct);
+
+        bot.Name = request.Name ?? bot.Name;
+        bot.Description = request.Description ?? bot.Description;
+        bot.ShortDescription = request.ShortDescription ?? bot.ShortDescription;
+        if (request.CommandsJson != null)
+            bot.CommandsJson = request.CommandsJson;
+
+        if (request.TrackMessagesEnabled.HasValue)
+            bot.TrackMessagesEnabled = request.TrackMessagesEnabled.Value;
+
+        bot.UpdatedAtUtc = DateTime.UtcNow;
+
+        if (request.Photo != null)
+        {
+            var metadata = await _metadataService.FetchAsync(bot.Token, ct);
+            bot.PhotoFileId = metadata.PhotoFileId;
+            bot.PhotoFilePath = metadata.PhotoFilePath;
+        }
+
+        await _db.SaveChangesAsync(ct);
+        return Ok(MapToDto(bot));
+    }
+
+    /// <summary>
     /// Скачать аватар бота (proxy).
     /// </summary>
     [HttpGet("{id:guid}/photo")]
@@ -313,6 +382,7 @@ public sealed class BotsController : ControllerBase
             ShortDescription = bot.ShortDescription,
             Commands = commands,
             Status = bot.Status,
+            TrackMessagesEnabled = bot.TrackMessagesEnabled,
             PhotoFileId = bot.PhotoFileId,
             CreatedAtUtc = bot.CreatedAtUtc,
             UpdatedAtUtc = bot.UpdatedAtUtc,
@@ -334,6 +404,7 @@ public sealed class BotsController : ControllerBase
         public string? ShortDescription { get; set; }
         public List<TelegramCommandDto>? Commands { get; set; }
         public TelegramBotStatus Status { get; set; }
+        public bool TrackMessagesEnabled { get; set; }
         public string? PhotoFileId { get; set; }
         public DateTime CreatedAtUtc { get; set; }
         public DateTime UpdatedAtUtc { get; set; }
@@ -376,5 +447,38 @@ public sealed class BotsController : ControllerBase
     public sealed class CreateBotRequest
     {
         public string? Token { get; set; }
+        public Guid? CloneFromBotId { get; set; }
+    }
+
+    /// <summary>
+    /// Запрос на обновление профиля бота.
+    /// </summary>
+    public sealed class UpdateBotProfileRequest
+    {
+        public string? Name { get; set; }
+        public string? Description { get; set; }
+        public string? ShortDescription { get; set; }
+        public string? CommandsJson { get; set; }
+        public bool? TrackMessagesEnabled { get; set; }
+        public IFormFile? Photo { get; set; }
+    }
+
+    private static List<TelegramCommandPayload>? ParseCommands(string? commandsJson)
+    {
+        if (string.IsNullOrWhiteSpace(commandsJson))
+            return null;
+
+        try
+        {
+            var items = JsonSerializer.Deserialize<List<TelegramCommandDto>>(commandsJson) ?? new List<TelegramCommandDto>();
+            return items
+                .Where(x => !string.IsNullOrWhiteSpace(x.Command))
+                .Select(x => new TelegramCommandPayload(x.Command!.Trim(), (x.Description ?? string.Empty).Trim()))
+                .ToList();
+        }
+        catch
+        {
+            return null;
+        }
     }
 }

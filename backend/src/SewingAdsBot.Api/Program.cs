@@ -116,6 +116,7 @@ builder.Services.AddScoped<PaymentService>();
 builder.Services.AddScoped<PinService>();
 builder.Services.AddScoped<AdminAuthService>();
 builder.Services.AddHttpClient<TelegramBotMetadataService>();
+builder.Services.AddHttpClient<TelegramBotProfileService>();
 
 /// <summary>
 /// Telegram-бот.

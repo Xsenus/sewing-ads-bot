@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -84,7 +85,22 @@ public sealed class BotUpdateHandler
 
             case UpdateType.Message:
                 if (update.Message != null)
-                    await HandleMessageAsync(bot, update.Message, ct);
+                    await HandleMessageAsync(bot, update.Message, ct, isEdited: false);
+                return;
+
+            case UpdateType.EditedMessage:
+                if (update.EditedMessage != null)
+                    await HandleMessageAsync(bot, update.EditedMessage, ct, isEdited: true);
+                return;
+
+            case UpdateType.ChannelPost:
+                if (update.ChannelPost != null)
+                    await HandleChannelPostAsync(bot, update.ChannelPost, ct, isEdited: false);
+                return;
+
+            case UpdateType.EditedChannelPost:
+                if (update.EditedChannelPost != null)
+                    await HandleChannelPostAsync(bot, update.EditedChannelPost, ct, isEdited: true);
                 return;
 
             default:
@@ -107,8 +123,10 @@ public sealed class BotUpdateHandler
         return Task.CompletedTask;
     }
 
-    private async Task HandleMessageAsync(ITelegramBotClient bot, Message message, CancellationToken ct)
+    private async Task HandleMessageAsync(ITelegramBotClient bot, Message message, CancellationToken ct, bool isEdited)
     {
+        await LogIncomingMessageAsync(bot, message, isEdited, ct);
+
         if (message.Chat.Type != ChatType.Private)
             return;
 
@@ -240,6 +258,50 @@ public sealed class BotUpdateHandler
         // Если попали сюда — неизвестный ввод
         await bot.SendTextMessageAsync(user.TelegramUserId, "Не понял. Откройте меню.", replyMarkup: BotKeyboards.MainMenu());
         await _users.SetStateAsync(user.TelegramUserId, BotStates.Idle);
+    }
+
+    private async Task HandleChannelPostAsync(ITelegramBotClient bot, Message message, CancellationToken ct, bool isEdited)
+    {
+        await LogIncomingMessageAsync(bot, message, isEdited, ct);
+    }
+
+    private async Task LogIncomingMessageAsync(ITelegramBotClient bot, Message message, bool isEdited, CancellationToken ct)
+    {
+        var botUserId = bot.BotId;
+        var botEntity = await _db.TelegramBots.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.TelegramUserId == botUserId, ct);
+
+        if (botEntity == null || !botEntity.TrackMessagesEnabled)
+            return;
+
+        var forwardFromUserId = message.ForwardFrom?.Id;
+        var forwardFromChatId = message.ForwardFromChat?.Id;
+        var log = new TelegramMessageLog
+        {
+            TelegramBotId = botEntity.Id,
+            TelegramBotUserId = botUserId,
+            ChatId = message.Chat.Id,
+            ChatType = message.Chat.Type.ToString(),
+            ChatTitle = message.Chat.Title,
+            MessageId = message.MessageId,
+            MessageDateUtc = message.Date.ToUniversalTime(),
+            FromUserId = message.From?.Id,
+            FromUsername = message.From?.Username,
+            FromFirstName = message.From?.FirstName,
+            Text = message.Text,
+            Caption = message.Caption,
+            IsForwarded = forwardFromUserId.HasValue || forwardFromChatId.HasValue,
+            ForwardFromUserId = forwardFromUserId,
+            ForwardFromChatId = forwardFromChatId,
+            PayloadJson = JsonSerializer.Serialize(new
+            {
+                message,
+                isEdited
+            })
+        };
+
+        _db.TelegramMessageLogs.Add(log);
+        await _db.SaveChangesAsync(ct);
     }
 
     private async Task HandleStartAsync(ITelegramBotClient bot, AppUser user, string text)

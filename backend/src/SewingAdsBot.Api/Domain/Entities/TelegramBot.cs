@@ -71,6 +71,11 @@ public sealed class TelegramBot
     public TelegramBotStatus Status { get; set; } = TelegramBotStatus.Active;
 
     /// <summary>
+    /// Включено ли отслеживание сообщений пользователей/каналов.
+    /// </summary>
+    public bool TrackMessagesEnabled { get; set; } = true;
+
+    /// <summary>
     /// Последняя ошибка работы (если была).
     /// </summary>
     [MaxLength(1024)]

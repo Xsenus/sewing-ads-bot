@@ -115,6 +115,11 @@ a { color: inherit; }
   box-shadow: 0 16px 30px rgba(15, 23, 42, 0.04);
 }
 
+.card.nested {
+  background: var(--surface-alt);
+  border-style: dashed;
+}
+
 .row {
   display: grid;
   grid-template-columns: 180px 1fr;
@@ -326,4 +331,21 @@ code {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toggle input {
+  width: auto;
+}
+
+.command-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
 }

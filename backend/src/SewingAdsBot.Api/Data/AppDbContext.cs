@@ -81,6 +81,11 @@ public sealed class AppDbContext : DbContext
     public DbSet<TelegramBot> TelegramBots => Set<TelegramBot>();
 
     /// <summary>
+    /// Логи входящих сообщений Telegram.
+    /// </summary>
+    public DbSet<TelegramMessageLog> TelegramMessageLogs => Set<TelegramMessageLog>();
+
+    /// <summary>
     /// Инвойсы оплат.
 /// </summary>
     public DbSet<PaymentInvoice> PaymentInvoices => Set<PaymentInvoice>();
@@ -210,5 +215,8 @@ public sealed class AppDbContext : DbContext
 
         modelBuilder.Entity<TelegramBot>()
             .HasIndex(x => x.Username);
+
+        modelBuilder.Entity<TelegramMessageLog>()
+            .HasIndex(x => new { x.TelegramBotId, x.ChatId, x.MessageDateUtc });
     }
 }

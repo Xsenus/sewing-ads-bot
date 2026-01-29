@@ -15,6 +15,7 @@ import {
   restartBot,
   resumeBot,
   getApiUrl,
+  updateBotProfile,
 } from '../api';
 import { getToken } from '../auth';
 
@@ -35,11 +36,18 @@ export default function BotsPage() {
   const [channels, setChannels] = useState<BotChannel[]>([]);
   const [activeBotId, setActiveBotId] = useState<string | null>(null);
   const [token, setToken] = useState('');
+  const [cloneFromBotId, setCloneFromBotId] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoKey, setPhotoKey] = useState(0);
+  const [profileName, setProfileName] = useState('');
+  const [profileDescription, setProfileDescription] = useState('');
+  const [profileShortDescription, setProfileShortDescription] = useState('');
+  const [trackMessagesEnabled, setTrackMessagesEnabled] = useState(true);
+  const [commands, setCommands] = useState<Array<{ command: string; description: string }>>([]);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [confirm, setConfirm] = useState<{
     title: string;
     body: string;
@@ -47,6 +55,22 @@ export default function BotsPage() {
   } | null>(null);
 
   const activeBot = useMemo(() => bots.find((b) => b.id === activeBotId) ?? null, [bots, activeBotId]);
+  const defaultAvatar =
+    'data:image/svg+xml;utf8,' +
+    encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">
+        <defs>
+          <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+            <stop offset="0%" stop-color="#60a5fa"/>
+            <stop offset="100%" stop-color="#22d3ee"/>
+          </linearGradient>
+        </defs>
+        <rect width="96" height="96" rx="20" fill="url(#g)"/>
+        <circle cx="34" cy="40" r="8" fill="#0f172a"/>
+        <circle cx="62" cy="40" r="8" fill="#0f172a"/>
+        <rect x="28" y="58" width="40" height="10" rx="5" fill="#0f172a"/>
+      </svg>`,
+    );
 
   async function loadBots() {
     try {
@@ -122,6 +146,21 @@ export default function BotsPage() {
     };
   }, [activeBotId]);
 
+  useEffect(() => {
+    if (!activeBot) return;
+    setProfileName(activeBot.name ?? '');
+    setProfileDescription(activeBot.description ?? '');
+    setProfileShortDescription(activeBot.shortDescription ?? '');
+    setTrackMessagesEnabled(activeBot.trackMessagesEnabled ?? true);
+    setCommands(
+      activeBot.commands?.map((cmd) => ({
+        command: cmd.command ?? '',
+        description: cmd.description ?? '',
+      })) ?? [],
+    );
+    setPhotoFile(null);
+  }, [activeBot]);
+
   const openConfirm = (title: string, body: string, action: () => Promise<void>) => {
     setConfirm({ title, body, onConfirm: action });
   };
@@ -131,13 +170,45 @@ export default function BotsPage() {
       setLoading(true);
       setError(null);
       setMessage(null);
-      const newBot = await createBot(token.trim());
+      const newBot = await createBot(token.trim(), cloneFromBotId || undefined);
       setBots((prev) => [newBot, ...prev]);
       setToken('');
+      setCloneFromBotId('');
       setActiveBotId(newBot.id);
       setMessage('Бот добавлен и запущен.');
     } catch (e: any) {
       setError(e?.message ?? 'Не удалось добавить бота.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleProfileSave = async () => {
+    if (!activeBot) return;
+    try {
+      setLoading(true);
+      setError(null);
+      setMessage(null);
+      const commandsJson = JSON.stringify(
+        commands
+          .filter((cmd) => cmd.command.trim())
+          .map((cmd) => ({ command: cmd.command.trim(), description: cmd.description.trim() })),
+      );
+
+      const updated = await updateBotProfile(activeBot.id, {
+        name: profileName,
+        description: profileDescription,
+        shortDescription: profileShortDescription,
+        commandsJson,
+        trackMessagesEnabled,
+        photo: photoFile,
+      });
+      setBots((prev) => prev.map((bot) => (bot.id === updated.id ? updated : bot)));
+      setPhotoKey((prev) => prev + 1);
+      setPhotoFile(null);
+      setMessage('Профиль бота обновлён.');
+    } catch (e: any) {
+      setError(e?.message ?? 'Не удалось обновить профиль.');
     } finally {
       setLoading(false);
     }
@@ -183,6 +254,17 @@ export default function BotsPage() {
                 placeholder="123456:AA..."
               />
             </div>
+            <div className="row">
+              <label>Скопировать настройки</label>
+              <select value={cloneFromBotId} onChange={(e) => setCloneFromBotId(e.target.value)}>
+                <option value="">Не копировать</option>
+                {bots.map((bot) => (
+                  <option key={bot.id} value={bot.id}>
+                    {bot.name ?? 'Без имени'} (@{bot.username ?? 'unknown'})
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="flex">
               <button className="primary" disabled={loading || !token.trim()} onClick={handleAdd}>
                 Добавить и запустить
@@ -222,7 +304,7 @@ export default function BotsPage() {
             <div className="card">
               <div className="bot-profile">
                 <img
-                  src={photoUrl ?? 'https://via.placeholder.com/96x96?text=Bot'}
+                  src={photoUrl ?? defaultAvatar}
                   alt={activeBot.name ?? 'Bot'}
                 />
                 <div>
@@ -310,18 +392,74 @@ export default function BotsPage() {
             </div>
 
             <div className="card">
-              <h3>Команды</h3>
-              {activeBot.commands && activeBot.commands.length > 0 ? (
-                <ul className="list">
-                  {activeBot.commands.map((cmd, idx) => (
-                    <li key={`${cmd.command}-${idx}`}>
-                      <strong>/{cmd.command}</strong> — {cmd.description ?? 'Без описания'}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="muted">Команды не заданы.</p>
-              )}
+              <h3>Профиль и команды</h3>
+              <div className="row">
+                <label>Имя бота</label>
+                <input value={profileName} onChange={(e) => setProfileName(e.target.value)} />
+              </div>
+              <div className="row">
+                <label>Описание</label>
+                <textarea value={profileDescription} onChange={(e) => setProfileDescription(e.target.value)} />
+              </div>
+              <div className="row">
+                <label>Короткое описание</label>
+                <textarea value={profileShortDescription} onChange={(e) => setProfileShortDescription(e.target.value)} />
+              </div>
+              <div className="row">
+                <label>Фото</label>
+                <input type="file" accept="image/*" onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)} />
+              </div>
+              <div className="row">
+                <label>Отслеживание сообщений</label>
+                <label className="toggle">
+                  <input
+                    type="checkbox"
+                    checked={trackMessagesEnabled}
+                    onChange={(e) => setTrackMessagesEnabled(e.target.checked)}
+                  />
+                  <span>{trackMessagesEnabled ? 'Включено' : 'Выключено'}</span>
+                </label>
+              </div>
+              <div className="card nested">
+                <h4>Команды/кнопки</h4>
+                {commands.length === 0 && <p className="muted">Команды не заданы.</p>}
+                {commands.map((cmd, idx) => (
+                  <div key={`${cmd.command}-${idx}`} className="command-row">
+                    <input
+                      placeholder="/command"
+                      value={cmd.command}
+                      onChange={(e) => {
+                        const next = [...commands];
+                        next[idx] = { ...next[idx], command: e.target.value };
+                        setCommands(next);
+                      }}
+                    />
+                    <input
+                      placeholder="Описание"
+                      value={cmd.description}
+                      onChange={(e) => {
+                        const next = [...commands];
+                        next[idx] = { ...next[idx], description: e.target.value };
+                        setCommands(next);
+                      }}
+                    />
+                    <button
+                      className="ghost"
+                      onClick={() => setCommands((prev) => prev.filter((_, i) => i !== idx))}
+                    >
+                      Удалить
+                    </button>
+                  </div>
+                ))}
+                <button className="ghost" onClick={() => setCommands((prev) => [...prev, { command: '', description: '' }])}>
+                  Добавить команду
+                </button>
+              </div>
+              <div className="flex">
+                <button className="primary" onClick={handleProfileSave} disabled={loading}>
+                  Сохранить профиль
+                </button>
+              </div>
             </div>
 
             <div className="card">
