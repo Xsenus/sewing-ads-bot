@@ -101,10 +101,10 @@ public sealed class TelegramBotHostedService : BackgroundService
                 _logger.LogInformation("Telegram bot started.");
 
             bot.StartReceiving(
-                updateHandler: HandleUpdate,
-                pollingErrorHandler: HandleError,
-                receiverOptions: receiverOptions,
-                cancellationToken: receiverCts.Token);
+                HandleUpdate,
+                HandleError,
+                receiverOptions,
+                receiverCts.Token);
 
             activeToken = token;
 

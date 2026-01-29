@@ -66,7 +66,7 @@ public sealed class ModerationRequestsController : ControllerBase
             return NotFound();
 
         var preview = _formatter.BuildModerationPreview(ad, category, channel);
-        return Ok(preview);
+        return Content(preview, "text/plain");
     }
 
     /// <summary>

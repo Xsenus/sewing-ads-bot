@@ -51,7 +51,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const text = await res.text();
   if (!text) return undefined as T;
 
-  return JSON.parse(text) as T;
+  const contentType = res.headers.get('Content-Type') ?? '';
+  if (contentType.includes('application/json')) {
+    return JSON.parse(text) as T;
+  }
+
+  return text as T;
 }
 
 /**

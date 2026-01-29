@@ -12,6 +12,7 @@ using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
+using Telegram.Bot.Types.ReplyMarkups;
 
 namespace SewingAdsBot.Api.Telegram;
 
@@ -221,12 +222,12 @@ public sealed class BotUpdateHandler
                               $"<b>Где:</b> {Escape(ad.Country)}, {Escape(ad.City)}\n" +
                               $"<b>Категория:</b> {Escape(cat?.Name ?? "")}";
 
-                var kb = new Telegram.Bot.Types.ReplyMarkups.InlineKeyboardMarkup(new[]
+                var kb = new InlineKeyboardMarkup(new[]
                 {
                     new []
                     {
-                        Telegram.Bot.Types.ReplyMarkups.InlineKeyboardButton.WithCallbackData("Перейти к объявлению", $"search:links:{ad.Id}"),
-                        Telegram.Bot.Types.ReplyMarkups.InlineKeyboardButton.WithCallbackData("Посмотреть контакт", $"search:contacts:{ad.Id}")
+                        InlineKeyboardButton.WithCallbackData("Перейти к объявлению", $"search:links:{ad.Id}"),
+                        InlineKeyboardButton.WithCallbackData("Посмотреть контакт", $"search:contacts:{ad.Id}")
                     }
                 });
 
@@ -689,14 +690,195 @@ public sealed class BotUpdateHandler
         {
             // В предпросмотре отправляем как новый месседж (чтобы не возиться с edit media)
             if (ad.MediaType == MediaType.Photo)
-                await bot.SendPhotoAsync(user.TelegramUserId, Telegram.Bot.Types.InputFile.FromFileId(ad.MediaFileId), caption: text, parseMode: ParseMode.Html, replyMarkup: kb);
+                await bot.SendPhotoAsync(user.TelegramUserId, InputFile.FromFileId(ad.MediaFileId), caption: text, parseMode: ParseMode.Html, replyMarkup: kb);
             else
-                await bot.SendVideoAsync(user.TelegramUserId, Telegram.Bot.Types.InputFile.FromFileId(ad.MediaFileId), caption: text, parseMode: ParseMode.Html, replyMarkup: kb);
+                await bot.SendVideoAsync(user.TelegramUserId, InputFile.FromFileId(ad.MediaFileId), caption: text, parseMode: ParseMode.Html, replyMarkup: kb);
         }
         else
         {
             await bot.SendTextMessageAsync(user.TelegramUserId, text, parseMode: ParseMode.Html, replyMarkup: kb);
         }
+    }
+
+    private async Task ShowMyAdsAsync(ITelegramBotClient bot, AppUser user)
+    {
+        var ads = await _ads.GetUserAdsAsync(user.Id, take: 10);
+        if (ads.Count == 0)
+        {
+            await bot.SendTextMessageAsync(user.TelegramUserId, "У вас пока нет объявлений.", replyMarkup: BotKeyboards.MainMenu());
+            return;
+        }
+
+        await bot.SendTextMessageAsync(user.TelegramUserId, "Ваши объявления (последние 10):");
+
+        foreach (var ad in ads)
+        {
+            var category = await _categories.GetByIdAsync(ad.CategoryId);
+            var title = string.IsNullOrWhiteSpace(ad.Title) ? "Без заголовка" : ad.Title;
+            var statusText = GetAdStatusLabel(ad.Status);
+            var typeText = ad.IsPaid ? "Платное" : "Бесплатное";
+
+            var text = $"<b>{Escape(title)}</b>\n" +
+                       $"Статус: <b>{statusText}</b>\n" +
+                       $"Тип: {typeText}\n" +
+                       $"Категория: {Escape(category?.Name ?? "—")}\n" +
+                       $"Создано: {ad.CreatedAtUtc:yyyy-MM-dd HH:mm} UTC";
+
+            var rows = new List<List<InlineKeyboardButton>>
+            {
+                new()
+                {
+                    InlineKeyboardButton.WithCallbackData("Подробнее", $"myad:view:{ad.Id}")
+                }
+            };
+
+            if (ad.Status == AdStatus.Published)
+            {
+                var publishedRow = new List<InlineKeyboardButton>
+                {
+                    InlineKeyboardButton.WithCallbackData("Ссылки", $"myad:links:{ad.Id}")
+                };
+
+                if (ad.IsPaid)
+                    publishedRow.Add(InlineKeyboardButton.WithCallbackData("Поднять", $"myad:bump:{ad.Id}"));
+
+                rows.Add(publishedRow);
+            }
+
+            await bot.SendTextMessageAsync(user.TelegramUserId, text, parseMode: ParseMode.Html, replyMarkup: new InlineKeyboardMarkup(rows));
+        }
+    }
+
+    private async Task HandleMyAdsCallbackAsync(ITelegramBotClient bot, CallbackQuery cq, AppUser user, string data)
+    {
+        var parts = data.Split(':', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length != 3)
+        {
+            await bot.AnswerCallbackQueryAsync(cq.Id);
+            return;
+        }
+
+        var action = parts[1];
+        if (!Guid.TryParse(parts[2], out var adId))
+        {
+            await bot.AnswerCallbackQueryAsync(cq.Id, "Некорректный ID.");
+            return;
+        }
+
+        var ad = await _db.Ads.FirstOrDefaultAsync(x => x.Id == adId && x.UserId == user.Id);
+        if (ad == null)
+        {
+            await bot.AnswerCallbackQueryAsync(cq.Id, "Объявление не найдено.");
+            return;
+        }
+
+        if (action == "view")
+        {
+            var category = await _categories.GetByIdAsync(ad.CategoryId);
+            var statusText = GetAdStatusLabel(ad.Status);
+            var typeText = ad.IsPaid ? "Платное" : "Бесплатное";
+
+            var text = $"<b>{Escape(ad.Title)}</b>\n" +
+                       $"{Escape(ad.Text)}\n\n" +
+                       $"Контакты: {Escape(ad.Contacts)}\n" +
+                       $"Статус: <b>{statusText}</b>\n" +
+                       $"Тип: {typeText}\n" +
+                       $"Категория: {Escape(category?.Name ?? "—")}\n" +
+                       $"Создано: {ad.CreatedAtUtc:yyyy-MM-dd HH:mm} UTC\n" +
+                       $"Обновлено: {ad.UpdatedAtUtc:yyyy-MM-dd HH:mm} UTC";
+
+            await bot.SendTextMessageAsync(user.TelegramUserId, text, parseMode: ParseMode.Html);
+            await bot.AnswerCallbackQueryAsync(cq.Id);
+            return;
+        }
+
+        if (action == "links")
+        {
+            if (ad.Status != AdStatus.Published)
+            {
+                await bot.AnswerCallbackQueryAsync(cq.Id, "Ссылки доступны только для опубликованных объявлений.");
+                return;
+            }
+
+            var pubs = await _db.AdPublications
+                .Where(x => x.AdId == adId)
+                .OrderByDescending(x => x.PublishedAtUtc)
+                .ToListAsync();
+
+            if (pubs.Count == 0)
+            {
+                await bot.AnswerCallbackQueryAsync(cq.Id, "Ссылки недоступны.");
+                return;
+            }
+
+            var channels = await _db.Channels.ToListAsync();
+            var links = new List<string>();
+
+            foreach (var p in pubs)
+            {
+                var ch = channels.FirstOrDefault(x => x.Id == p.ChannelId);
+                if (ch?.TelegramUsername != null)
+                    links.Add($"https://t.me/{ch.TelegramUsername.TrimStart('@')}/{p.TelegramMessageId}");
+            }
+
+            if (links.Count == 0)
+            {
+                await bot.SendTextMessageAsync(user.TelegramUserId, "Ссылки не удалось сформировать (каналы без username).");
+            }
+            else
+            {
+                await bot.SendTextMessageAsync(user.TelegramUserId, "Ссылки:\n" + string.Join("\n", links));
+            }
+
+            await bot.AnswerCallbackQueryAsync(cq.Id);
+            return;
+        }
+
+        if (action == "bump")
+        {
+            if (!ad.IsPaid)
+            {
+                await bot.AnswerCallbackQueryAsync(cq.Id, "Поднятие доступно только для платных объявлений.");
+                return;
+            }
+
+            if (ad.Status != AdStatus.Published)
+            {
+                await bot.AnswerCallbackQueryAsync(cq.Id, "Поднять можно только опубликованные объявления.");
+                return;
+            }
+
+            await _payments.SendBumpInvoiceAsync(user.TelegramUserId, ad.Id);
+            await bot.SendTextMessageAsync(user.TelegramUserId, "Счёт на поднятие отправлен ✅");
+            await bot.AnswerCallbackQueryAsync(cq.Id);
+            return;
+        }
+
+        await bot.AnswerCallbackQueryAsync(cq.Id);
+    }
+
+    private async Task SendReferralLinkAsync(ITelegramBotClient bot, AppUser user)
+    {
+        var enabled = await _settings.GetBoolAsync("App.EnableReferralProgram", _appOptions.EnableReferralProgram);
+        if (!enabled)
+        {
+            await bot.SendTextMessageAsync(user.TelegramUserId, "Реферальная программа сейчас отключена.");
+            return;
+        }
+
+        var me = await bot.GetMeAsync();
+        if (string.IsNullOrWhiteSpace(me.Username))
+        {
+            await bot.SendTextMessageAsync(user.TelegramUserId, "Не удалось определить username бота.");
+            return;
+        }
+
+        var refLink = $"https://t.me/{me.Username}?start=ref_{user.ReferralCode}";
+        var text = "Ваша реферальная ссылка:\n" +
+                   $"{refLink}\n\n" +
+                   "Поделитесь ею, чтобы получать бонусы за оплаты привлечённых пользователей.";
+
+        await bot.SendTextMessageAsync(user.TelegramUserId, text);
     }
 
     private async Task HandleCreateCallbackAsync(ITelegramBotClient bot, CallbackQuery cq, AppUser user, string data)
@@ -920,6 +1102,15 @@ public sealed class BotUpdateHandler
         var v = (await _settings.GetAsync("App.TelegraphTariffsUrl"))?.Trim();
         return string.IsNullOrWhiteSpace(v) ? _appOptions.TelegraphTariffsUrl : v;
     }
+
+    private static string GetAdStatusLabel(AdStatus status) => status switch
+    {
+        AdStatus.Draft => "Черновик",
+        AdStatus.PendingModeration => "На модерации",
+        AdStatus.Published => "Опубликовано",
+        AdStatus.Rejected => "Отклонено",
+        _ => status.ToString()
+    };
 
     private static string Escape(string? s)
         => System.Net.WebUtility.HtmlEncode(s ?? string.Empty);
