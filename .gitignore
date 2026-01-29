@@ -170,7 +170,7 @@ appsettings.local.json
 *.lock
 *.patch
 *.rej
-*.db
+*.db*
 
 ###############################################################################
 # Optional: exclude local launch profiles (если не хотите коммитить)
