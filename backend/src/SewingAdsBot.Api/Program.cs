@@ -31,7 +31,23 @@ builder.Services.Configure<AdminOptions>(builder.Configuration.GetSection("Admin
 
 builder.Services.AddDbContext<AppDbContext>(opt =>
 {
-    opt.UseNpgsql(builder.Configuration.GetConnectionString("Default"));
+    var provider = builder.Configuration.GetValue<string>("Database:Provider")?.Trim().ToLowerInvariant();
+    switch (provider)
+    {
+        case null:
+        case "":
+        case "postgres":
+        case "postgresql":
+            opt.UseNpgsql(builder.Configuration.GetConnectionString("Default"));
+            break;
+
+        case "sqlite":
+            opt.UseSqlite(builder.Configuration.GetConnectionString("Sqlite"));
+            break;
+
+        default:
+            throw new InvalidOperationException($"Unsupported database provider: '{provider}'. Use 'Postgres' or 'Sqlite'.");
+    }
 });
 
 builder.Services.AddControllers();

@@ -99,7 +99,23 @@ npm run dev
 
 ## Быстрый старт
 
-1) Поднимите PostgreSQL (локально или в Docker) и задайте connection string в `backend/src/SewingAdsBot.Api/appsettings.json`
+1) Выберите базу данных и задайте connection string в `backend/src/SewingAdsBot.Api/appsettings.json`:
+
+   - **PostgreSQL** (по умолчанию):
+     ```json
+     "Database": { "Provider": "Postgres" },
+     "ConnectionStrings": {
+       "Default": "Host=localhost;Port=5432;Database=sewing_ads;Username=postgres;Password=postgres"
+     }
+     ```
+
+   - **SQLite** (локальная БД в файле):
+     ```json
+     "Database": { "Provider": "Sqlite" },
+     "ConnectionStrings": {
+       "Sqlite": "Data Source=sewing_ads.db"
+     }
+     ```
 
 2) Укажите токен бота:
 
