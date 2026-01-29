@@ -76,11 +76,11 @@ public sealed class PaymentService
         var inv = await _db.PaymentInvoices.FirstOrDefaultAsync(x => x.Payload == query.InvoicePayload);
         if (inv == null || inv.IsPaid)
         {
-            await bot.AnswerPreCheckoutQueryAsync(query.Id, false, "Инвойс не найден или уже оплачен.");
+            await bot.AnswerPreCheckoutQueryAsync(query.Id, "Инвойс не найден или уже оплачен.");
             return;
         }
 
-        await bot.AnswerPreCheckoutQueryAsync(query.Id, true);
+        await bot.AnswerPreCheckoutQueryAsync(query.Id);
     }
 
     /// <summary>
