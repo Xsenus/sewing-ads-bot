@@ -1,0 +1,177 @@
+###############################################################################
+# OS / System files
+###############################################################################
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+###############################################################################
+# Logs
+###############################################################################
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+lerna-debug.log*
+*.stackdump
+
+###############################################################################
+# Secrets / dotenv
+###############################################################################
+.env
+.env.*
+!.env.example
+!.env.*.example
+!.env.development.example
+!.env.production.example
+
+###############################################################################
+# Node / React (Vite, CRA, Next, general)
+###############################################################################
+node_modules/
+**/node_modules/
+
+# Build outputs
+dist/
+dist-ssr/
+build/
+out/
+.next/
+.next/cache/
+.nuxt/
+.output/
+
+# Vite / SWC / Turbo / Parcel / general caches
+.vite/
+.swc/
+.turbo/
+.parcel-cache/
+.cache/
+.eslintcache
+*.tsbuildinfo
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Local overrides
+*.local
+*.localhost
+
+###############################################################################
+# TypeScript / JavaScript tooling
+###############################################################################
+# Optional: lockfiles (ОСТАВЬТЕ только тот, который реально используете)
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+###############################################################################
+# .NET / C# build artifacts
+###############################################################################
+# Build outputs
+bin/
+obj/
+out/
+**/bin/
+**/obj/
+**/out/
+
+# Publish artifacts (часто кладут рядом)
+publish/
+artifacts/
+
+# Rider / dotnet tools
+.nuget/
+packages/
+*.nupkg
+*.snupkg
+project.assets.json
+project.lock.json
+*.nuget.props
+*.nuget.targets
+
+# dotnet local tools manifest (обычно НУЖЕН в репо, поэтому НЕ игнорим)
+# .config/dotnet-tools.json
+
+###############################################################################
+# Visual Studio
+###############################################################################
+.vs/
+**/.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.rsuser
+*.VC.db
+*.VC.VC.opendb
+*.cr/
+
+# Visual Studio build logs
+*.tlog
+
+###############################################################################
+# JetBrains Rider / IntelliJ / ReSharper
+###############################################################################
+.idea/
+*.sln.iml
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+dotCover.Output.html
+
+###############################################################################
+# Test results
+###############################################################################
+TestResults/
+**/TestResults/
+*.trx
+*.coverage
+*.coveragexml
+
+###############################################################################
+# BenchmarkDotNet
+###############################################################################
+BenchmarkDotNet.Artifacts/
+
+###############################################################################
+# ASP.NET / IIS / user secrets & local settings
+###############################################################################
+# UserSecrets are stored outside repo by default, but ignore any accidental files
+secrets.json
+appsettings.*.local.json
+appsettings.Local.json
+appsettings.local.json
+
+###############################################################################
+# Docker (если используете локально; обычно коммитят Dockerfile, поэтому не игнорим их)
+###############################################################################
+# docker-compose.override.yml
+
+###############################################################################
+# Misc / temp
+###############################################################################
+*.tmp
+*.temp
+*.bak
+*.old
+*.orig
+*.swp
+*.swo
+*.pid
+*.pid.lock
+*.lock
+*.patch
+*.rej
+
+###############################################################################
+# Optional: exclude local launch profiles (если не хотите коммитить)
+###############################################################################
+# **/Properties/launchSettings.json
