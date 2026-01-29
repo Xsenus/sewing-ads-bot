@@ -72,8 +72,13 @@ public sealed class AppDbContext : DbContext
 
     /// <summary>
     /// Аккаунты админки.
-/// </summary>
+    /// </summary>
     public DbSet<AdminAccount> AdminAccounts => Set<AdminAccount>();
+
+    /// <summary>
+    /// Telegram боты.
+    /// </summary>
+    public DbSet<TelegramBot> TelegramBots => Set<TelegramBot>();
 
     /// <summary>
     /// Инвойсы оплат.
@@ -198,5 +203,12 @@ public sealed class AppDbContext : DbContext
         modelBuilder.Entity<AdminAccount>()
             .Property(x => x.IsActive)
             .HasDefaultValue(true);
+
+        modelBuilder.Entity<TelegramBot>()
+            .HasIndex(x => x.Token)
+            .IsUnique();
+
+        modelBuilder.Entity<TelegramBot>()
+            .HasIndex(x => x.Username);
     }
 }

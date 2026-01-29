@@ -134,6 +134,30 @@ export type AdminAccount = {
 };
 
 /**
+ * Telegram бот.
+ */
+export type TelegramBot = {
+  id: string;
+  name?: string | null;
+  username?: string | null;
+  telegramUserId: number;
+  description?: string | null;
+  shortDescription?: string | null;
+  commands?: { command?: string | null; description?: string | null }[] | null;
+  status: number;
+  photoFileId?: string | null;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+  lastError?: string | null;
+  lastErrorAtUtc?: string | null;
+};
+
+/**
+ * Каналы, где бот админ.
+ */
+export type BotChannel = ChannelDto;
+
+/**
  * Логин и получение JWT.
  */
 export async function login(username: string, password: string): Promise<string> {
@@ -319,4 +343,45 @@ export async function setAdminAccountActive(id: string, isActive: boolean): Prom
 
 export function getApiUrl(): string {
   return API_URL;
+}
+
+// --- Bots ---
+
+export async function getBots(): Promise<TelegramBot[]> {
+  return await request<TelegramBot[]>('/api/admin/bots');
+}
+
+export async function createBot(token: string): Promise<TelegramBot> {
+  return await request<TelegramBot>('/api/admin/bots', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  });
+}
+
+export async function pauseBot(id: string): Promise<{ message: string }> {
+  return await request<{ message: string }>(`/api/admin/bots/${id}/pause`, { method: 'POST' });
+}
+
+export async function resumeBot(id: string): Promise<{ message: string }> {
+  return await request<{ message: string }>(`/api/admin/bots/${id}/resume`, { method: 'POST' });
+}
+
+export async function disableBot(id: string): Promise<{ message: string }> {
+  return await request<{ message: string }>(`/api/admin/bots/${id}/disable`, { method: 'POST' });
+}
+
+export async function restartBot(id: string): Promise<{ message: string }> {
+  return await request<{ message: string }>(`/api/admin/bots/${id}/restart`, { method: 'POST' });
+}
+
+export async function refreshBot(id: string): Promise<TelegramBot> {
+  return await request<TelegramBot>(`/api/admin/bots/${id}/refresh`, { method: 'POST' });
+}
+
+export async function deleteBot(id: string): Promise<{ message: string }> {
+  return await request<{ message: string }>(`/api/admin/bots/${id}`, { method: 'DELETE' });
+}
+
+export async function getBotChannels(id: string): Promise<BotChannel[]> {
+  return await request<BotChannel[]>(`/api/admin/bots/${id}/channels`);
 }

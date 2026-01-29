@@ -115,13 +115,15 @@ builder.Services.AddScoped<ReferralService>();
 builder.Services.AddScoped<PaymentService>();
 builder.Services.AddScoped<PinService>();
 builder.Services.AddScoped<AdminAuthService>();
+builder.Services.AddHttpClient<TelegramBotMetadataService>();
 
 /// <summary>
 /// Telegram-бот.
 /// </summary>
 builder.Services.AddSingleton<TelegramBotClientFactory>();
+builder.Services.AddSingleton<TelegramBotRuntimeManager>();
 builder.Services.AddScoped<BotUpdateHandler>();
-builder.Services.AddHostedService<TelegramBotHostedService>();
+builder.Services.AddHostedService<TelegramBotsHostedService>();
 
 var app = builder.Build();
 

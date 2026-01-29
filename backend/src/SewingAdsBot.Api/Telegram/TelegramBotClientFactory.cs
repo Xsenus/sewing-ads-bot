@@ -1,6 +1,8 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SewingAdsBot.Api.Data;
 using SewingAdsBot.Api.Options;
 using SewingAdsBot.Api.Services;
 using Telegram.Bot;
@@ -59,6 +61,8 @@ public sealed class TelegramBotClientFactory
         var token = await ReadSettingAsync("Telegram.BotToken");
         if (string.IsNullOrWhiteSpace(token))
             token = _fallbackOptions.BotToken;
+        if (string.IsNullOrWhiteSpace(token))
+            token = await ReadActiveBotTokenAsync();
 
         token = NormalizeToken(token);
 
@@ -133,6 +137,18 @@ public sealed class TelegramBotClientFactory
         using var scope = _scopeFactory.CreateScope();
         var settings = scope.ServiceProvider.GetRequiredService<SettingsService>();
         return await settings.GetAsync(key);
+    }
+
+    private async Task<string?> ReadActiveBotTokenAsync()
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var bot = await db.TelegramBots
+            .AsNoTracking()
+            .Where(x => x.Status == Domain.Enums.TelegramBotStatus.Active)
+            .OrderByDescending(x => x.UpdatedAtUtc)
+            .FirstOrDefaultAsync();
+        return bot?.Token;
     }
 
     private static string? NormalizeToken(string? token)
