@@ -35,6 +35,13 @@ public sealed class AdService
         if (string.IsNullOrWhiteSpace(user.Country) || string.IsNullOrWhiteSpace(user.City))
             throw new InvalidOperationException("Сначала укажите страну и город в профиле.");
 
+        if (!isPaid)
+        {
+            var allowFree = await _settings.GetBoolAsync("Ads.EnableFreeAds", defaultValue: true);
+            if (!allowFree)
+                throw new InvalidOperationException("Бесплатные объявления отключены администратором.");
+        }
+
         var ad = new Ad
         {
             UserId = user.Id,
@@ -143,7 +150,11 @@ public sealed class AdService
         if (ad == null) return (false, "Объявление не найдено.");
 
         if (!ad.IsPaid)
-            return (false, "В бесплатном объявлении нельзя добавлять фото/видео. Выберите платное.");
+        {
+            var allowMediaInFree = await _settings.GetBoolAsync("Ads.FreeAllowMedia", defaultValue: false);
+            if (!allowMediaInFree)
+                return (false, "В бесплатном объявлении нельзя добавлять фото/видео. Выберите платное.");
+        }
 
         ad.MediaType = mediaType;
         ad.MediaFileId = fileId;

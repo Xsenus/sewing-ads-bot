@@ -11,6 +11,16 @@ public sealed class LimitOptions
     public int FreeAdsPerCalendarDay { get; set; } = 1;
 
     /// <summary>
+    /// Сколько бесплатных объявлений можно опубликовать за период (день/неделя/месяц).
+    /// </summary>
+    public int FreeAdsPerPeriod { get; set; } = 1;
+
+    /// <summary>
+    /// Период лимита бесплатных объявлений: Day | Week | Month | None.
+    /// </summary>
+    public string FreeAdsPeriod { get; set; } = "Day";
+
+    /// <summary>
     /// Максимальная длина заголовка.
     /// </summary>
     public int TitleMax { get; set; } = 150;

@@ -12,6 +12,11 @@ public static class BotStates
     public const string Idle = "Idle";
 
     /// <summary>
+    /// Ожидаем выбор языка.
+    /// </summary>
+    public const string ChoosingLanguage = "ChoosingLanguage";
+
+    /// <summary>
     /// Ожидаем ввод страны.
     /// </summary>
     public const string AwaitCountry = "AwaitCountry";

@@ -75,6 +75,19 @@ public sealed class PublicationService
         if (ad == null)
             return new PublicationResult { Ok = false, Message = "Объявление не найдено." };
 
+        if (!ad.IsPaid)
+        {
+            var allowFree = await _settings.GetBoolAsync("Ads.EnableFreeAds", defaultValue: true);
+            if (!allowFree)
+            {
+                return new PublicationResult
+                {
+                    Ok = false,
+                    Message = "Бесплатные объявления отключены администратором."
+                };
+            }
+        }
+
         var cat = await _categoryService.GetByIdAsync(ad.CategoryId);
         if (cat == null)
             return new PublicationResult { Ok = false, Message = "Категория не найдена." };
@@ -84,29 +97,34 @@ public sealed class PublicationService
         if (string.IsNullOrWhiteSpace(globalSub))
             globalSub = _appOptions.GlobalRequiredSubscriptionChannel;
 
-        if (!string.IsNullOrWhiteSpace(globalSub))
+        var requiredChannels = await GetRequiredSubscriptionChannelsAsync(globalSub);
+        if (requiredChannels.Count > 0)
         {
-            var okSub = await _subscriptionService.IsSubscribedAsync(telegramUserId, globalSub);
-            if (!okSub)
+            foreach (var channel in requiredChannels)
             {
-                return new PublicationResult
+                var okSub = await _subscriptionService.IsSubscribedAsync(telegramUserId, channel);
+                if (!okSub)
                 {
-                    Ok = false,
-                    Message = $"Перед публикацией подпишитесь на канал: https://t.me/{globalSub}"
-                };
+                    var links = string.Join(", ", requiredChannels.Select(x => $"https://t.me/{x}"));
+                    return new PublicationResult
+                    {
+                        Ok = false,
+                        Message = $"Перед публикацией подпишитесь на каналы: {links}"
+                    };
+                }
             }
         }
 
         // 2) Лимит бесплатных (календарный день)
         if (!ad.IsPaid)
         {
-            var (ok, used, limit) = await _dailyLimit.CanPublishFreeAsync(telegramUserId);
+            var (ok, used, limit, periodLabel) = await _dailyLimit.CanPublishFreeAsync(telegramUserId);
             if (!ok)
             {
                 return new PublicationResult
                 {
                     Ok = false,
-                    Message = $"Лимит бесплатных объявлений: {limit} в сутки. Сегодня уже использовано: {used}."
+                    Message = $"Лимит бесплатных объявлений: {limit} за {periodLabel}. Использовано: {used}."
                 };
             }
         }
@@ -114,9 +132,10 @@ public sealed class PublicationService
         // 3) Запрет ссылок в бесплатной версии (глобально)
         if (!ad.IsPaid)
         {
-            if (_linkGuard.ContainsForbiddenLinks(ad.Title) ||
-                _linkGuard.ContainsForbiddenLinks(ad.Text) ||
-                _linkGuard.ContainsForbiddenLinks(ad.Contacts))
+            var forbidLinks = await _settings.GetBoolAsync("Ads.ForbidLinksInFree", defaultValue: true);
+            if (forbidLinks && (_linkGuard.ContainsForbiddenLinks(ad.Title) ||
+                                _linkGuard.ContainsForbiddenLinks(ad.Text) ||
+                                _linkGuard.ContainsForbiddenLinks(ad.Contacts)))
             {
                 return new PublicationResult
                 {
@@ -185,7 +204,8 @@ public sealed class PublicationService
                 }
             }
 
-            if (channel.ModerationMode == ChannelModerationMode.Moderation)
+            var moderationMode = await ResolveModerationModeAsync(channel.ModerationMode);
+            if (moderationMode == ChannelModerationMode.Moderation)
             {
                 await _moderationService.CreateRequestAsync(ad.Id, channel.Id);
                 pending++;
@@ -281,5 +301,38 @@ public sealed class PublicationService
         await _db.SaveChangesAsync();
 
         return links;
+    }
+
+    private async Task<List<string>> GetRequiredSubscriptionChannelsAsync(string? globalChannel)
+    {
+        var raw = (await _settings.GetAsync("App.RequiredSubscriptionChannels"))?.Trim();
+        if (string.IsNullOrWhiteSpace(raw))
+            raw = _appOptions.RequiredSubscriptionChannels;
+        var list = new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(raw))
+        {
+            list.AddRange(raw.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(x => x.Trim().TrimStart('@'))
+                .Where(x => !string.IsNullOrWhiteSpace(x)));
+        }
+
+        if (!string.IsNullOrWhiteSpace(globalChannel))
+            list.Add(globalChannel.Trim().TrimStart('@'));
+
+        return list.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private async Task<ChannelModerationMode> ResolveModerationModeAsync(ChannelModerationMode channelMode)
+    {
+        var raw = (await _settings.GetAsync("Publication.ModerationMode"))?.Trim();
+        if (string.IsNullOrWhiteSpace(raw))
+            return channelMode;
+
+        return raw.Equals("Moderation", StringComparison.OrdinalIgnoreCase)
+            ? ChannelModerationMode.Moderation
+            : raw.Equals("Auto", StringComparison.OrdinalIgnoreCase)
+                ? ChannelModerationMode.Auto
+                : channelMode;
     }
 }

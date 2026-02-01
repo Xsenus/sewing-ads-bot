@@ -16,6 +16,11 @@ public sealed class AppOptions
     public string GlobalRequiredSubscriptionChannel { get; set; } = "sewing_industries";
 
     /// <summary>
+    /// Список каналов, на которые пользователь должен быть подписан перед публикацией (через запятую, без @).
+    /// </summary>
+    public string RequiredSubscriptionChannels { get; set; } = string.Empty;
+
+    /// <summary>
     /// Текст системной ссылки, добавляемой внизу поста.
     /// </summary>
     public string DefaultFooterLinkText { get; set; } = "Швейные производства • Объявления";

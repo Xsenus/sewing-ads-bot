@@ -42,6 +42,12 @@ public sealed class User
     public string? City { get; set; }
 
     /// <summary>
+    /// Язык интерфейса бота (например "ru" или "en").
+    /// </summary>
+    [MaxLength(8)]
+    public string? Language { get; set; }
+
+    /// <summary>
     /// Текущий баланс (если вы решите использовать внутренний баланс).
     /// </summary>
     public decimal Balance { get; set; }

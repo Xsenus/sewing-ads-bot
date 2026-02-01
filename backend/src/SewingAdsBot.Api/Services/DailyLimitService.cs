@@ -28,19 +28,29 @@ public sealed class DailyLimitService
     /// <summary>
     /// Проверить, можно ли опубликовать бесплатное объявление сегодня (UTC).
     /// </summary>
-    public async Task<(bool ok, int used, int limit)> CanPublishFreeAsync(long telegramUserId)
+    public async Task<(bool ok, int used, int limit, string periodLabel)> CanPublishFreeAsync(long telegramUserId)
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var now = DateTime.UtcNow;
+        var periodRaw = (await _settings.GetAsync("Limits.FreeAdsPeriod"))?.Trim();
+        var period = string.IsNullOrWhiteSpace(periodRaw) ? _limits.FreeAdsPeriod : periodRaw;
 
-        var counter = await _db.DailyCounters.FirstOrDefaultAsync(x =>
-            x.TelegramUserId == telegramUserId &&
-            x.DateUtc == today &&
-            x.CounterKey == "FreeAdPublish");
+        var limit = await _settings.GetIntAsync("Limits.FreeAdsPerPeriod",
+            _limits.FreeAdsPerPeriod > 0 ? _limits.FreeAdsPerPeriod : _limits.FreeAdsPerCalendarDay);
 
-        var used = counter?.Count ?? 0;
-        var limit = await _settings.GetIntAsync("Limits.FreeAdsPerCalendarDay", _limits.FreeAdsPerCalendarDay);
+        if (limit <= 0 || period.Equals("None", StringComparison.OrdinalIgnoreCase))
+            return (true, 0, limit, "Без ограничений");
 
-        return (used < limit, used, limit);
+        var (startDate, endDate, label) = GetPeriodRange(now, period);
+
+        var used = await _db.DailyCounters
+            .Where(x => x.TelegramUserId == telegramUserId
+                        && x.CounterKey == "FreeAdPublish"
+                        && x.DateUtc >= startDate
+                        && x.DateUtc <= endDate)
+            .Select(x => (int?)x.Count)
+            .SumAsync() ?? 0;
+
+        return (used < limit, used, limit, label);
     }
 
     /// <summary>
@@ -72,5 +82,27 @@ public sealed class DailyLimitService
         }
 
         await _db.SaveChangesAsync();
+    }
+
+    private static (DateOnly start, DateOnly end, string label) GetPeriodRange(DateTime now, string period)
+    {
+        var today = DateOnly.FromDateTime(now);
+        var normalized = period.Trim().ToLowerInvariant();
+
+        return normalized switch
+        {
+            "week" => (StartOfWeek(today), today, "неделю"),
+            "month" => (new DateOnly(today.Year, today.Month, 1), today, "месяц"),
+            _ => (today, today, "сутки")
+        };
+    }
+
+    private static DateOnly StartOfWeek(DateOnly date)
+    {
+        var dayOfWeek = (int)date.DayOfWeek;
+        if (dayOfWeek == 0)
+            dayOfWeek = 7;
+
+        return date.AddDays(-(dayOfWeek - 1));
     }
 }
