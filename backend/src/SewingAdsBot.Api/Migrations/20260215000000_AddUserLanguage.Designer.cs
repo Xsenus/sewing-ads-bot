@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using SewingAdsBot.Api.Data;
 
@@ -10,12 +11,15 @@ using SewingAdsBot.Api.Data;
 namespace SewingAdsBot.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260215000000_AddUserLanguage")]
+    partial class AddUserLanguage
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "8.0.8");
+            modelBuilder
+                .HasAnnotation("ProductVersion", "7.0.0");
 
             modelBuilder.Entity("SewingAdsBot.Api.Domain.Entities.Ad", b =>
                 {
@@ -26,12 +30,12 @@ namespace SewingAdsBot.Api.Migrations
                     b.Property<int>("BumpCount")
                         .HasColumnType("INTEGER");
 
-                    b.Property<Guid>("CategoryId")
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("City")
                         .IsRequired()
                         .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("CategoryId")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Contacts")
@@ -125,7 +129,6 @@ namespace SewingAdsBot.Api.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER")
                         .HasDefaultValue(true);
 
@@ -189,13 +192,13 @@ namespace SewingAdsBot.Api.Migrations
                     b.Property<Guid?>("ParentId")
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Slug")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
-
-                    b.Property<int>("SortOrder")
-                        .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
 
@@ -214,9 +217,6 @@ namespace SewingAdsBot.Api.Migrations
 
                     b.Property<Guid>("ChannelId")
                         .HasColumnType("TEXT");
-
-                    b.Property<bool>("IsEnabled")
-                        .HasColumnType("INTEGER");
 
                     b.HasKey("CategoryId", "ChannelId");
 
@@ -289,15 +289,15 @@ namespace SewingAdsBot.Api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
-                    b.Property<int>("Count")
-                        .HasColumnType("INTEGER");
-
                     b.Property<string>("CounterKey")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<DateOnly>("DateUtc")
                         .HasColumnType("date");
+
+                    b.Property<int>("Count")
+                        .HasColumnType("INTEGER");
 
                     b.Property<long>("TelegramUserId")
                         .HasColumnType("INTEGER");
@@ -328,11 +328,11 @@ namespace SewingAdsBot.Api.Migrations
                     b.Property<string>("RejectReason")
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTime?>("ReviewedAtUtc")
-                        .HasColumnType("TEXT");
-
                     b.Property<long?>("ReviewedByTelegramUserId")
                         .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("ReviewedAtUtc")
+                        .HasColumnType("TEXT");
 
                     b.Property<int>("Status")
                         .HasColumnType("INTEGER");
@@ -374,20 +374,19 @@ namespace SewingAdsBot.Api.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTime?>("PaidAtUtc")
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("Payload")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("TelegramChargeId")
-                        .HasMaxLength(256)
+                    b.Property<DateTime?>("PaidAtUtc")
                         .HasColumnType("TEXT");
 
                     b.Property<long>("TelegramUserId")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("TelegramChargeId")
+                        .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
@@ -425,44 +424,8 @@ namespace SewingAdsBot.Api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("CommandsJson")
-                        .HasColumnType("TEXT");
-
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("TEXT");
-
-                    b.Property<string>("Description")
-                        .HasMaxLength(512)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("LastError")
-                        .HasMaxLength(1024)
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("LastErrorAtUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Name")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("PhotoFileId")
-                        .HasMaxLength(256)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("PhotoFilePath")
-                        .HasMaxLength(512)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ShortDescription")
-                        .HasMaxLength(256)
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Status")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<long>("TelegramUserId")
-                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Token")
                         .IsRequired()
@@ -472,11 +435,11 @@ namespace SewingAdsBot.Api.Migrations
                     b.Property<bool>("TrackMessagesEnabled")
                         .HasColumnType("INTEGER");
 
-                    b.Property<DateTime>("UpdatedAtUtc")
-                        .HasColumnType("TEXT");
+                    b.Property<long>("TelegramUserId")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Username")
-                        .HasMaxLength(64)
+                        .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
@@ -498,39 +461,41 @@ namespace SewingAdsBot.Api.Migrations
                     b.Property<string>("Caption")
                         .HasColumnType("TEXT");
 
-                    b.Property<long>("ChatId")
+                    b.Property<long?>("ChatId")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("ChatTitle")
-                        .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("ChatType")
                         .IsRequired()
-                        .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<long?>("ForwardFromChatId")
+                    b.Property<DateTime?>("ForwardFromChatId")
                         .HasColumnType("INTEGER");
 
                     b.Property<long?>("ForwardFromUserId")
                         .HasColumnType("INTEGER");
 
-                    b.Property<string>("FromFirstName")
-                        .HasMaxLength(128)
-                        .HasColumnType("TEXT");
-
                     b.Property<long?>("FromUserId")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("FromUsername")
-                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("FromFirstName")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("Id1")
                         .HasColumnType("TEXT");
 
                     b.Property<bool>("IsForwarded")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("TelegramBotId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("TelegramBotUserId")
                         .HasColumnType("INTEGER");
 
                     b.Property<DateTime>("MessageDateUtc")
@@ -540,13 +505,8 @@ namespace SewingAdsBot.Api.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("PayloadJson")
+                        .IsRequired()
                         .HasColumnType("TEXT");
-
-                    b.Property<Guid>("TelegramBotId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<long>("TelegramBotUserId")
-                        .HasColumnType("INTEGER");
 
                     b.Property<string>("Text")
                         .HasColumnType("TEXT");

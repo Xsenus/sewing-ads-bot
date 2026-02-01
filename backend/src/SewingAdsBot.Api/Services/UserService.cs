@@ -79,7 +79,7 @@ public sealed class UserService
 
     /// <summary>
     /// Обновить страну и город.
-/// </summary>
+    /// </summary>
     public async Task UpdateLocationAsync(long telegramUserId, string? country, string? city)
     {
         var user = await _db.Users.FirstOrDefaultAsync(x => x.TelegramUserId == telegramUserId);
@@ -92,6 +92,19 @@ public sealed class UserService
         if (city != null)
             user.City = city;
 
+        await _db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Обновить язык интерфейса.
+    /// </summary>
+    public async Task UpdateLanguageAsync(long telegramUserId, string language)
+    {
+        var user = await _db.Users.FirstOrDefaultAsync(x => x.TelegramUserId == telegramUserId);
+        if (user == null)
+            return;
+
+        user.Language = language;
         await _db.SaveChangesAsync();
     }
 

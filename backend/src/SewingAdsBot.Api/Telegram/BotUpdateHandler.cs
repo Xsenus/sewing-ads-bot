@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -142,6 +141,7 @@ public sealed class BotUpdateHandler
         }
 
         var user = await _users.GetOrCreateAsync(tgUser.Id, tgUser.Username, tgUser.FirstName);
+        var lang = BotTexts.Normalize(user.Language);
 
         // /start
         if (!string.IsNullOrWhiteSpace(message.Text) && message.Text.StartsWith("/start", StringComparison.OrdinalIgnoreCase))
@@ -150,13 +150,22 @@ public sealed class BotUpdateHandler
             return;
         }
 
+        if (string.IsNullOrWhiteSpace(user.Language))
+        {
+            await _users.SetStateAsync(user.TelegramUserId, BotStates.ChoosingLanguage);
+            await bot.SendTextMessageAsync(user.TelegramUserId,
+                BotTexts.Text(lang, BotTextKeys.LanguageChooseTitle),
+                replyMarkup: BotKeyboards.LanguageSelection());
+            return;
+        }
+
         var state = await _users.GetOrCreateStateAsync(user.TelegramUserId);
 
         // Глобальная отмена
-        if (string.Equals(message.Text, "Отмена", StringComparison.OrdinalIgnoreCase))
+        if (BotTexts.Matches(message.Text, lang, BotTextKeys.Cancel))
         {
             await _users.SetStateAsync(user.TelegramUserId, BotStates.Idle, payload: null);
-            await bot.SendTextMessageAsync(user.TelegramUserId, "Ок, отменено.", replyMarkup: BotKeyboards.MainMenu());
+            await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.Canceled), replyMarkup: BotKeyboards.MainMenu(lang));
             return;
         }
 
@@ -167,36 +176,72 @@ public sealed class BotUpdateHandler
             return;
         }
 
+        if (state.State == BotStates.ChoosingLanguage)
+        {
+            await bot.SendTextMessageAsync(user.TelegramUserId,
+                BotTexts.Text(lang, BotTextKeys.LanguageChooseTitle),
+                replyMarkup: BotKeyboards.LanguageSelection());
+            return;
+        }
+
         // Ввод страны/города
         if (state.State == BotStates.AwaitCountry)
         {
             var country = (message.Text ?? "").Trim();
-            if (country.Length < 2)
+            var (mode, countries) = await GetLocationModeAsync();
+            if (mode == LocationInputMode.Keyboard && countries.Count > 0)
             {
-                await bot.SendTextMessageAsync(user.TelegramUserId, "Введите страну (минимум 2 символа).");
+                if (!countries.Contains(country, StringComparer.OrdinalIgnoreCase))
+                {
+                    await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.InvalidLocationSelection));
+                    return;
+                }
+            }
+            else if (country.Length < 2)
+            {
+                await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.EnterCountryShort));
                 return;
             }
 
             await _users.UpdateLocationAsync(user.TelegramUserId, country, city: null);
             await _users.SetStateAsync(user.TelegramUserId, BotStates.AwaitCity);
 
-            await bot.SendTextMessageAsync(user.TelegramUserId, "Теперь введите город.");
+            var (cityMode, cities) = await GetCitiesAsync(country);
+            if (cityMode == LocationInputMode.Keyboard && cities.Count > 0)
+            {
+                await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.SelectCity),
+                    replyMarkup: BotKeyboards.LocationOptions(cities, lang));
+            }
+            else
+            {
+                await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.EnterCity));
+            }
             return;
         }
 
         if (state.State == BotStates.AwaitCity)
         {
             var city = (message.Text ?? "").Trim();
-            if (city.Length < 2)
+            var (mode, cities) = await GetCitiesAsync(user.Country ?? string.Empty);
+            if (mode == LocationInputMode.Keyboard && cities.Count > 0)
             {
-                await bot.SendTextMessageAsync(user.TelegramUserId, "Введите город (минимум 2 символа).");
+                if (!cities.Contains(city, StringComparer.OrdinalIgnoreCase))
+                {
+                    await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.InvalidLocationSelection));
+                    return;
+                }
+            }
+            else if (city.Length < 2)
+            {
+                await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.EnterCityShort));
                 return;
             }
 
             await _users.UpdateLocationAsync(user.TelegramUserId, country: null, city: city);
             await _users.SetStateAsync(user.TelegramUserId, BotStates.Idle);
 
-            await bot.SendTextMessageAsync(user.TelegramUserId, "Место сохранено ✅", replyMarkup: BotKeyboards.ProfileMenu());
+            await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.LocationSaved),
+                replyMarkup: BotKeyboards.ProfileMenu(lang));
             return;
         }
 
@@ -217,18 +262,21 @@ public sealed class BotUpdateHandler
 
             if (ctx.SelectedCategoryId == null)
             {
-                await bot.SendTextMessageAsync(user.TelegramUserId, "Категория не выбрана.", replyMarkup: BotKeyboards.MainMenu());
+                await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.CategoryNotSelected),
+                    replyMarkup: BotKeyboards.MainMenu(lang));
                 return;
             }
 
             var results = await _search.SearchAsync(ctx.SelectedCategoryId.Value, ctx.SearchKeywords, user.Country, user.City, take: 5);
             if (results.Count == 0)
             {
-                await bot.SendTextMessageAsync(user.TelegramUserId, "Ничего не найдено.", replyMarkup: BotKeyboards.MainMenu());
+                await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.SearchNothingFound),
+                    replyMarkup: BotKeyboards.MainMenu(lang));
                 return;
             }
 
-            await bot.SendTextMessageAsync(user.TelegramUserId, $"Найдено объявлений: {results.Count}");
+            await bot.SendTextMessageAsync(user.TelegramUserId,
+                string.Format(BotTexts.Text(lang, BotTextKeys.SearchResultsCount), results.Count));
 
             foreach (var ad in results)
             {
@@ -244,8 +292,8 @@ public sealed class BotUpdateHandler
                 {
                     new []
                     {
-                        InlineKeyboardButton.WithCallbackData("Перейти к объявлению", $"search:links:{ad.Id}"),
-                        InlineKeyboardButton.WithCallbackData("Посмотреть контакт", $"search:contacts:{ad.Id}")
+                        InlineKeyboardButton.WithCallbackData(BotTexts.Text(lang, BotTextKeys.SearchGoToAd), $"search:links:{ad.Id}"),
+                        InlineKeyboardButton.WithCallbackData(BotTexts.Text(lang, BotTextKeys.SearchViewContact), $"search:contacts:{ad.Id}")
                     }
                 });
 
@@ -256,7 +304,8 @@ public sealed class BotUpdateHandler
         }
 
         // Если попали сюда — неизвестный ввод
-        await bot.SendTextMessageAsync(user.TelegramUserId, "Не понял. Откройте меню.", replyMarkup: BotKeyboards.MainMenu());
+        await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.NotUnderstood),
+            replyMarkup: BotKeyboards.MainMenu(lang));
         await _users.SetStateAsync(user.TelegramUserId, BotStates.Idle);
     }
 
@@ -306,6 +355,8 @@ public sealed class BotUpdateHandler
 
     private async Task HandleStartAsync(ITelegramBotClient bot, AppUser user, string text)
     {
+        var lang = BotTexts.Normalize(user.Language);
+
         // /start <payload>
         var parts = text.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
         var payload = parts.Length > 1 ? parts[1].Trim() : null;
@@ -317,127 +368,150 @@ public sealed class BotUpdateHandler
             await _users.TryAttachReferrerAsync(user.TelegramUserId, code);
         }
 
+        if (string.IsNullOrWhiteSpace(user.Language))
+        {
+            await _users.SetStateAsync(user.TelegramUserId, BotStates.ChoosingLanguage);
+            await bot.SendTextMessageAsync(user.TelegramUserId,
+                BotTexts.Text(lang, BotTextKeys.LanguageChooseTitle),
+                replyMarkup: BotKeyboards.LanguageSelection());
+            return;
+        }
+
         if (string.Equals(payload, "publish", StringComparison.OrdinalIgnoreCase))
         {
             await StartCreateFlowAsync(bot, user);
             return;
         }
 
-        var hello = new StringBuilder();
-        hello.AppendLine("Привет! Это бот объявлений для швейной индустрии.");
-        hello.AppendLine();
-        hello.AppendLine("• Бесплатно: без фото/видео и без ссылок, 1 раз в сутки.");
-        hello.AppendLine("• Платно: можно фото/видео и ссылки, плюс платное поднятие.");
-        hello.AppendLine();
-        hello.AppendLine("Выберите действие в меню ниже.");
-
         await _users.SetStateAsync(user.TelegramUserId, BotStates.Idle);
-        await bot.SendTextMessageAsync(user.TelegramUserId, hello.ToString(), replyMarkup: BotKeyboards.MainMenu());
+        await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.StartGreeting),
+            replyMarkup: BotKeyboards.MainMenu(lang));
     }
 
     private async Task HandleMainMenuAsync(ITelegramBotClient bot, AppUser user, string? text)
     {
         text ??= string.Empty;
+        var lang = BotTexts.Normalize(user.Language);
 
-        switch (text)
+        if (BotTexts.Matches(text, lang, BotTextKeys.MenuCreateAd))
         {
-            case "Создать объявление":
-                await StartCreateFlowAsync(bot, user);
-                return;
-
-            case "Найти объявление":
-                await StartSearchFlowAsync(bot, user);
-                return;
-
-            case "Мой профиль":
-                await ShowProfileAsync(bot, user);
-                return;
-
-            case "Помощь":
-                await ShowHelpAsync(bot, user);
-                return;
-
-
-            case "Место":
-                await _users.SetStateAsync(user.TelegramUserId, BotStates.AwaitCountry);
-                await bot.SendTextMessageAsync(user.TelegramUserId, "Введите страну:");
-                return;
-
-            case "Мои объявления":
-                await ShowMyAdsAsync(bot, user);
-                return;
-
-            case "Реферальная ссылка":
-                await SendReferralLinkAsync(bot, user);
-                return;
-
-            case "Назад":
-                await bot.SendTextMessageAsync(user.TelegramUserId, "Главное меню:", replyMarkup: BotKeyboards.MainMenu());
-                return;
-
-            case "Платное объявление":
-                var tariffsUrl = await GetTariffsUrlAsync();
-                await bot.SendTextMessageAsync(user.TelegramUserId,
-                    $"Тарифы на платные размещения: {tariffsUrl}\n\n" +
-                    "Чтобы разместить платное объявление, нажмите «Создать объявление» и выберите «Платное».");
-                return;
-
-            default:
-                await bot.SendTextMessageAsync(user.TelegramUserId, "Выберите действие из меню.", replyMarkup: BotKeyboards.MainMenu());
-                return;
+            await StartCreateFlowAsync(bot, user);
+            return;
         }
+
+        if (BotTexts.Matches(text, lang, BotTextKeys.MenuSearchAd))
+        {
+            await StartSearchFlowAsync(bot, user);
+            return;
+        }
+
+        if (BotTexts.Matches(text, lang, BotTextKeys.MenuProfile))
+        {
+            await ShowProfileAsync(bot, user);
+            return;
+        }
+
+        if (BotTexts.Matches(text, lang, BotTextKeys.MenuHelp))
+        {
+            await ShowHelpAsync(bot, user);
+            return;
+        }
+
+        if (BotTexts.Matches(text, lang, BotTextKeys.MenuLocation))
+        {
+            await _users.SetStateAsync(user.TelegramUserId, BotStates.AwaitCountry);
+            await SendCountryPromptAsync(bot, user);
+            return;
+        }
+
+        if (BotTexts.Matches(text, lang, BotTextKeys.MenuMyAds))
+        {
+            await ShowMyAdsAsync(bot, user);
+            return;
+        }
+
+        if (BotTexts.Matches(text, lang, BotTextKeys.MenuReferral))
+        {
+            await SendReferralLinkAsync(bot, user);
+            return;
+        }
+
+        if (BotTexts.Matches(text, lang, BotTextKeys.MenuBack))
+        {
+            await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.MainMenuTitle),
+                replyMarkup: BotKeyboards.MainMenu(lang));
+            return;
+        }
+
+        if (BotTexts.Matches(text, lang, BotTextKeys.MenuPaidAd))
+        {
+            var tariffsUrl = await GetTariffsUrlAsync();
+            var message = $"{BotTexts.Text(lang, BotTextKeys.PaidAdInfoTitle)} {tariffsUrl}\n\n" +
+                          BotTexts.Text(lang, BotTextKeys.PaidAdInfo);
+            var kb = new InlineKeyboardMarkup(
+                InlineKeyboardButton.WithUrl(BotTexts.Text(lang, BotTextKeys.PaidTariffs), tariffsUrl)
+            );
+            await bot.SendTextMessageAsync(user.TelegramUserId, message, replyMarkup: kb);
+            return;
+        }
+
+        await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.ChooseActionMenu),
+            replyMarkup: BotKeyboards.MainMenu(lang));
     }
 
     private async Task ShowProfileAsync(ITelegramBotClient bot, AppUser user)
     {
+        var lang = BotTexts.Normalize(user.Language);
         var location = (!string.IsNullOrWhiteSpace(user.Country) && !string.IsNullOrWhiteSpace(user.City))
             ? $"{user.Country}, {user.City}"
-            : "не задано";
+            : BotTexts.Text(lang, BotTextKeys.LocationNotSet);
 
         var refLink = $"ref_{user.ReferralCode}";
 
-        var text = $"<b>Профиль</b>\n" +
-                   $"Место: <b>{Escape(location)}</b>\n" +
-                   $"Реф.код: <code>{Escape(refLink)}</code>\n" +
-                   $"Баланс: <b>{user.Balance:0.00}</b>";
+        var text = $"<b>{BotTexts.Text(lang, BotTextKeys.ProfileTitle)}</b>\n" +
+                   $"{BotTexts.Text(lang, BotTextKeys.ProfileLocation)}: <b>{Escape(location)}</b>\n" +
+                   $"{BotTexts.Text(lang, BotTextKeys.ProfileReferral)}: <code>{Escape(refLink)}</code>\n" +
+                   $"{BotTexts.Text(lang, BotTextKeys.ProfileBalance)}: <b>{user.Balance:0.00}</b>";
 
         await _users.SetStateAsync(user.TelegramUserId, BotStates.Idle);
-        await bot.SendTextMessageAsync(user.TelegramUserId, text, parseMode: ParseMode.Html, replyMarkup: BotKeyboards.ProfileMenu());
+        await bot.SendTextMessageAsync(user.TelegramUserId, text, parseMode: ParseMode.Html, replyMarkup: BotKeyboards.ProfileMenu(lang));
     }
 
     private async Task ShowHelpAsync(ITelegramBotClient bot, AppUser user)
     {
+        var lang = BotTexts.Normalize(user.Language);
         var tariffsUrl = await GetTariffsUrlAsync();
-        var text = "Правила:\n" +
-                   "• Бесплатные объявления: 1 раз в сутки, без фото/видео и без ссылок.\n" +
-                   "• Контакты: только @username, телефон или email.\n" +
-                   "• Платные объявления: можно фото/видео и ссылки.\n\n" +
-                   $"Тарифы: {tariffsUrl}";
+        var text = string.Format(BotTexts.Text(lang, BotTextKeys.HelpText), tariffsUrl);
 
-        await bot.SendTextMessageAsync(user.TelegramUserId, text, replyMarkup: BotKeyboards.MainMenu());
+        await bot.SendTextMessageAsync(user.TelegramUserId, text, replyMarkup: BotKeyboards.MainMenu(lang));
     }
 
     private async Task StartCreateFlowAsync(ITelegramBotClient bot, AppUser user)
     {
+        var lang = BotTexts.Normalize(user.Language);
         if (string.IsNullOrWhiteSpace(user.Country) || string.IsNullOrWhiteSpace(user.City))
         {
             await _users.SetStateAsync(user.TelegramUserId, BotStates.AwaitCountry);
-            await bot.SendTextMessageAsync(user.TelegramUserId, "Сначала укажите страну. (Профиль → Место)\nВведите страну:");
+            await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.EnterCountryFirst));
+            await SendCountryPromptAsync(bot, user, forceManualPrompt: false);
             return;
         }
 
         var roots = await _categories.GetRootAsync();
         await _users.SetStateAsync(user.TelegramUserId, BotStates.Creating_SelectCategory, new FlowContext { CategoryParentId = null });
 
-        await bot.SendTextMessageAsync(user.TelegramUserId, "Выберите категорию:", replyMarkup: BotKeyboards.Categories(roots));
+        await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.CategoryChoose),
+            replyMarkup: BotKeyboards.Categories(roots));
     }
 
     private async Task StartSearchFlowAsync(ITelegramBotClient bot, AppUser user)
     {
+        var lang = BotTexts.Normalize(user.Language);
         var roots = await _categories.GetRootAsync();
         await _users.SetStateAsync(user.TelegramUserId, BotStates.Searching_SelectCategory, new FlowContext { CategoryParentId = null });
 
-        await bot.SendTextMessageAsync(user.TelegramUserId, "Выберите категорию для поиска:", replyMarkup: BotKeyboards.Categories(roots));
+        await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.CategoryChooseSearch),
+            replyMarkup: BotKeyboards.Categories(roots));
     }
 
     private async Task HandleCallbackAsync(ITelegramBotClient bot, CallbackQuery cq, CancellationToken ct)
@@ -453,6 +527,12 @@ public sealed class BotUpdateHandler
         if (data.StartsWith("mod:", StringComparison.Ordinal))
         {
             await HandleModerationCallbackAsync(bot, cq, user, data);
+            return;
+        }
+
+        if (data.StartsWith("lang:", StringComparison.Ordinal))
+        {
+            await HandleLanguageCallbackAsync(bot, cq, user, data);
             return;
         }
 
@@ -502,10 +582,11 @@ public sealed class BotUpdateHandler
 
     private async Task HandleCategoryCallbackAsync(ITelegramBotClient bot, CallbackQuery cq, AppUser user, UserState state, string data)
     {
+        var lang = BotTexts.Normalize(user.Language);
         var idStr = data.Split(':', 2)[1];
         if (!Guid.TryParse(idStr, out var catId))
         {
-            await bot.AnswerCallbackQueryAsync(cq.Id, "Некорректная категория.");
+            await bot.AnswerCallbackQueryAsync(cq.Id, BotTexts.Text(lang, BotTextKeys.InvalidCategory));
             return;
         }
 
@@ -521,7 +602,7 @@ public sealed class BotUpdateHandler
             await bot.EditMessageTextAsync(
                 chatId: cq.Message!.Chat.Id,
                 messageId: cq.Message!.MessageId,
-                text: "Выберите подкатегорию:",
+                text: BotTexts.Text(lang, BotTextKeys.SubcategoryChoose),
                 replyMarkup: BotKeyboards.Categories(children, backData));
 
             // сохраняем parentId
@@ -541,16 +622,17 @@ public sealed class BotUpdateHandler
         if (state.State == BotStates.Creating_SelectCategory)
         {
             await _users.SetStateAsync(user.TelegramUserId, BotStates.Creating_SelectType, ctx2);
+            var allowFree = await _settings.GetBoolAsync("Ads.EnableFreeAds", defaultValue: true);
             await bot.EditMessageTextAsync(
                 chatId: cq.Message!.Chat.Id,
                 messageId: cq.Message!.MessageId,
-                text: "Выберите тип объявления:",
-                replyMarkup: BotKeyboards.AdType());
+                text: BotTexts.Text(lang, BotTextKeys.AdTypeChoose),
+                replyMarkup: BotKeyboards.AdType(lang, allowFree));
         }
         else if (state.State == BotStates.Searching_SelectCategory)
         {
             await _users.SetStateAsync(user.TelegramUserId, BotStates.Searching_AwaitKeywords, ctx2);
-            await bot.SendTextMessageAsync(user.TelegramUserId, "Введите ключевые слова для поиска (или отправьте «-» чтобы искать без слов):");
+            await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.SearchKeywords));
         }
 
         await bot.AnswerCallbackQueryAsync(cq.Id);
@@ -558,6 +640,7 @@ public sealed class BotUpdateHandler
 
     private async Task HandleCategoryBackCallbackAsync(ITelegramBotClient bot, CallbackQuery cq, AppUser user, UserState state, string data)
     {
+        var lang = BotTexts.Normalize(user.Language);
         string target = data.Split(':', 2)[1];
 
         List<Category> cats;
@@ -581,7 +664,7 @@ public sealed class BotUpdateHandler
         await bot.EditMessageTextAsync(
             chatId: cq.Message!.Chat.Id,
             messageId: cq.Message!.MessageId,
-            text: "Выберите категорию:",
+            text: BotTexts.Text(lang, BotTextKeys.CategoryChoose),
             replyMarkup: BotKeyboards.Categories(cats, back));
 
         await bot.AnswerCallbackQueryAsync(cq.Id);
@@ -589,14 +672,21 @@ public sealed class BotUpdateHandler
 
     private async Task HandleTypeCallbackAsync(ITelegramBotClient bot, CallbackQuery cq, AppUser user, UserState state, string data)
     {
+        var lang = BotTexts.Normalize(user.Language);
         var ctx = await _users.GetStatePayloadAsync<FlowContext>(user.TelegramUserId) ?? new FlowContext();
         if (ctx.SelectedCategoryId == null)
         {
-            await bot.AnswerCallbackQueryAsync(cq.Id, "Сначала выберите категорию.");
+            await bot.AnswerCallbackQueryAsync(cq.Id, BotTexts.Text(lang, BotTextKeys.CategoryNotSelected));
             return;
         }
 
         var isPaid = data == "type:paid";
+        var allowFree = await _settings.GetBoolAsync("Ads.EnableFreeAds", defaultValue: true);
+        if (!isPaid && !allowFree)
+        {
+            await bot.AnswerCallbackQueryAsync(cq.Id, BotTexts.Text(lang, BotTextKeys.FreeAdsDisabled));
+            return;
+        }
 
         try
         {
@@ -605,9 +695,10 @@ public sealed class BotUpdateHandler
 
             await _users.SetStateAsync(user.TelegramUserId, BotStates.Creating_AwaitTitle, ctx);
 
+            var tariffsUrl = await GetTariffsUrlAsync();
             var text = isPaid
-                ? $"Платное объявление ✅\nТарифы: {_appOptions.TelegraphTariffsUrl}\n\nВведите заголовок объявления:"
-                : "Введите заголовок объявления:";
+                ? string.Format(BotTexts.Text(lang, BotTextKeys.PaidAdPrefix), tariffsUrl)
+                : BotTexts.Text(lang, BotTextKeys.EnterTitle);
 
             await bot.SendTextMessageAsync(user.TelegramUserId, text);
         }
@@ -621,11 +712,13 @@ public sealed class BotUpdateHandler
 
     private async Task HandleCreateFlowInputAsync(ITelegramBotClient bot, AppUser user, UserState state, Message message)
     {
+        var lang = BotTexts.Normalize(user.Language);
         var ctx = await _users.GetStatePayloadAsync<FlowContext>(user.TelegramUserId) ?? new FlowContext();
         if (ctx.DraftAdId == null)
         {
             await _users.SetStateAsync(user.TelegramUserId, BotStates.Idle);
-            await bot.SendTextMessageAsync(user.TelegramUserId, "Черновик не найден. Начните заново.", replyMarkup: BotKeyboards.MainMenu());
+            await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.DraftNotFound),
+                replyMarkup: BotKeyboards.MainMenu(lang));
             return;
         }
 
@@ -633,7 +726,8 @@ public sealed class BotUpdateHandler
         if (ad == null)
         {
             await _users.SetStateAsync(user.TelegramUserId, BotStates.Idle);
-            await bot.SendTextMessageAsync(user.TelegramUserId, "Черновик не найден. Начните заново.", replyMarkup: BotKeyboards.MainMenu());
+            await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.DraftNotFound),
+                replyMarkup: BotKeyboards.MainMenu(lang));
             return;
         }
 
@@ -646,8 +740,15 @@ public sealed class BotUpdateHandler
                 return;
             }
 
+            if (!string.IsNullOrWhiteSpace(ctx.EditField))
+            {
+                ctx.EditField = null;
+                await ShowPreviewAsync(bot, user, ad.Id);
+                return;
+            }
+
             await _users.SetStateAsync(user.TelegramUserId, BotStates.Creating_AwaitText, ctx);
-            await bot.SendTextMessageAsync(user.TelegramUserId, "Введите текст объявления:");
+            await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.EnterText));
             return;
         }
 
@@ -660,8 +761,15 @@ public sealed class BotUpdateHandler
                 return;
             }
 
+            if (!string.IsNullOrWhiteSpace(ctx.EditField))
+            {
+                ctx.EditField = null;
+                await ShowPreviewAsync(bot, user, ad.Id);
+                return;
+            }
+
             await _users.SetStateAsync(user.TelegramUserId, BotStates.Creating_AwaitContacts, ctx);
-            await bot.SendTextMessageAsync(user.TelegramUserId, "Введите контакты (только @username, телефон или email):");
+            await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.EnterContacts));
             return;
         }
 
@@ -674,10 +782,19 @@ public sealed class BotUpdateHandler
                 return;
             }
 
-            if (ad.IsPaid)
+            if (!string.IsNullOrWhiteSpace(ctx.EditField))
+            {
+                ctx.EditField = null;
+                await ShowPreviewAsync(bot, user, ad.Id);
+                return;
+            }
+
+            var allowMediaInFree = await _settings.GetBoolAsync("Ads.FreeAllowMedia", defaultValue: false);
+            if (ad.IsPaid || allowMediaInFree)
             {
                 await _users.SetStateAsync(user.TelegramUserId, BotStates.Creating_AwaitMedia, ctx);
-                await bot.SendTextMessageAsync(user.TelegramUserId, "Отправьте фото или видео (или нажмите «Пропустить»).", replyMarkup: BotKeyboards.SkipMedia());
+                await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.SendMedia),
+                    replyMarkup: BotKeyboards.SkipMedia(lang));
             }
             else
             {
@@ -690,7 +807,7 @@ public sealed class BotUpdateHandler
         if (state.State == BotStates.Creating_AwaitMedia)
         {
             // Пропуск
-            if (string.Equals(message.Text, "Пропустить", StringComparison.OrdinalIgnoreCase))
+            if (BotTexts.Matches(message.Text, lang, BotTextKeys.Skip))
             {
                 await ShowPreviewAsync(bot, user, ad.Id);
                 return;
@@ -699,24 +816,35 @@ public sealed class BotUpdateHandler
             if (message.Photo != null && message.Photo.Length > 0)
             {
                 var fileId = message.Photo[^1].FileId;
-                await _ads.SetMediaAsync(ad.Id, MediaType.Photo, fileId);
+                var (ok, err) = await _ads.SetMediaAsync(ad.Id, MediaType.Photo, fileId);
+                if (!ok)
+                {
+                    await bot.SendTextMessageAsync(user.TelegramUserId, err ?? "Ошибка.");
+                    return;
+                }
                 await ShowPreviewAsync(bot, user, ad.Id);
                 return;
             }
 
             if (message.Video != null)
             {
-                await _ads.SetMediaAsync(ad.Id, MediaType.Video, message.Video.FileId);
+                var (ok, err) = await _ads.SetMediaAsync(ad.Id, MediaType.Video, message.Video.FileId);
+                if (!ok)
+                {
+                    await bot.SendTextMessageAsync(user.TelegramUserId, err ?? "Ошибка.");
+                    return;
+                }
                 await ShowPreviewAsync(bot, user, ad.Id);
                 return;
             }
 
-            await bot.SendTextMessageAsync(user.TelegramUserId, "Отправьте фото/видео или нажмите «Пропустить».");
+            await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.SendMediaRetry));
         }
     }
 
     private async Task ShowPreviewAsync(ITelegramBotClient bot, AppUser user, Guid adId)
     {
+        var lang = BotTexts.Normalize(user.Language);
         var ad = await _ads.GetByIdAsync(adId);
         if (ad == null)
             return;
@@ -746,9 +874,12 @@ public sealed class BotUpdateHandler
 
         await _users.SetStateAsync(user.TelegramUserId, BotStates.Creating_Preview, new FlowContext { DraftAdId = adId });
 
-        var kb = ad.IsPaid ? BotKeyboards.PreviewPaid(adId) : BotKeyboards.PreviewFree(adId);
+        var allowMediaInFree = await _settings.GetBoolAsync("Ads.FreeAllowMedia", defaultValue: false);
+        var kb = ad.IsPaid
+            ? BotKeyboards.PreviewPaid(adId, lang)
+            : BotKeyboards.PreviewFree(adId, allowMediaInFree, lang);
 
-        if (ad.IsPaid && ad.MediaType != MediaType.None && !string.IsNullOrWhiteSpace(ad.MediaFileId))
+        if (ad.MediaType != MediaType.None && !string.IsNullOrWhiteSpace(ad.MediaFileId))
         {
             // В предпросмотре отправляем как новый месседж (чтобы не возиться с edit media)
             if (ad.MediaType == MediaType.Photo)
@@ -764,21 +895,23 @@ public sealed class BotUpdateHandler
 
     private async Task ShowMyAdsAsync(ITelegramBotClient bot, AppUser user)
     {
+        var lang = BotTexts.Normalize(user.Language);
         var ads = await _ads.GetUserAdsAsync(user.Id, take: 10);
         if (ads.Count == 0)
         {
-            await bot.SendTextMessageAsync(user.TelegramUserId, "У вас пока нет объявлений.", replyMarkup: BotKeyboards.MainMenu());
+            await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.NoAdsYet),
+                replyMarkup: BotKeyboards.MainMenu(lang));
             return;
         }
 
-        await bot.SendTextMessageAsync(user.TelegramUserId, "Ваши объявления (последние 10):");
+        await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.MyAdsHeader));
 
         foreach (var ad in ads)
         {
             var category = await _categories.GetByIdAsync(ad.CategoryId);
-            var title = string.IsNullOrWhiteSpace(ad.Title) ? "Без заголовка" : ad.Title;
-            var statusText = GetAdStatusLabel(ad.Status);
-            var typeText = ad.IsPaid ? "Платное" : "Бесплатное";
+            var title = string.IsNullOrWhiteSpace(ad.Title) ? BotTexts.Text(lang, BotTextKeys.AdNoTitle) : ad.Title;
+            var statusText = GetAdStatusLabel(ad.Status, lang);
+            var typeText = ad.IsPaid ? BotTexts.Text(lang, BotTextKeys.AdTypePaid) : BotTexts.Text(lang, BotTextKeys.AdTypeFree);
 
             var text = $"<b>{Escape(title)}</b>\n" +
                        $"Статус: <b>{statusText}</b>\n" +
@@ -790,7 +923,7 @@ public sealed class BotUpdateHandler
             {
                 new()
                 {
-                    InlineKeyboardButton.WithCallbackData("Подробнее", $"myad:view:{ad.Id}")
+                    InlineKeyboardButton.WithCallbackData(BotTexts.Text(lang, BotTextKeys.AdDetails), $"myad:view:{ad.Id}")
                 }
             };
 
@@ -798,11 +931,11 @@ public sealed class BotUpdateHandler
             {
                 var publishedRow = new List<InlineKeyboardButton>
                 {
-                    InlineKeyboardButton.WithCallbackData("Ссылки", $"myad:links:{ad.Id}")
+                    InlineKeyboardButton.WithCallbackData(BotTexts.Text(lang, BotTextKeys.AdLinks), $"myad:links:{ad.Id}")
                 };
 
                 if (ad.IsPaid)
-                    publishedRow.Add(InlineKeyboardButton.WithCallbackData("Поднять", $"myad:bump:{ad.Id}"));
+                    publishedRow.Add(InlineKeyboardButton.WithCallbackData(BotTexts.Text(lang, BotTextKeys.AdBump), $"myad:bump:{ad.Id}"));
 
                 rows.Add(publishedRow);
             }
@@ -813,6 +946,7 @@ public sealed class BotUpdateHandler
 
     private async Task HandleMyAdsCallbackAsync(ITelegramBotClient bot, CallbackQuery cq, AppUser user, string data)
     {
+        var lang = BotTexts.Normalize(user.Language);
         var parts = data.Split(':', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length != 3)
         {
@@ -823,7 +957,7 @@ public sealed class BotUpdateHandler
         var action = parts[1];
         if (!Guid.TryParse(parts[2], out var adId))
         {
-            await bot.AnswerCallbackQueryAsync(cq.Id, "Некорректный ID.");
+            await bot.AnswerCallbackQueryAsync(cq.Id, BotTexts.Text(lang, BotTextKeys.InvalidId));
             return;
         }
 
@@ -837,8 +971,8 @@ public sealed class BotUpdateHandler
         if (action == "view")
         {
             var category = await _categories.GetByIdAsync(ad.CategoryId);
-            var statusText = GetAdStatusLabel(ad.Status);
-            var typeText = ad.IsPaid ? "Платное" : "Бесплатное";
+            var statusText = GetAdStatusLabel(ad.Status, lang);
+            var typeText = ad.IsPaid ? BotTexts.Text(lang, BotTextKeys.AdTypePaid) : BotTexts.Text(lang, BotTextKeys.AdTypeFree);
 
             var text = $"<b>{Escape(ad.Title)}</b>\n" +
                        $"{Escape(ad.Text)}\n\n" +
@@ -858,7 +992,7 @@ public sealed class BotUpdateHandler
         {
             if (ad.Status != AdStatus.Published)
             {
-                await bot.AnswerCallbackQueryAsync(cq.Id, "Ссылки доступны только для опубликованных объявлений.");
+                await bot.AnswerCallbackQueryAsync(cq.Id, BotTexts.Text(lang, BotTextKeys.LinksOnlyPublished));
                 return;
             }
 
@@ -869,7 +1003,7 @@ public sealed class BotUpdateHandler
 
             if (pubs.Count == 0)
             {
-                await bot.AnswerCallbackQueryAsync(cq.Id, "Ссылки недоступны.");
+                await bot.AnswerCallbackQueryAsync(cq.Id, BotTexts.Text(lang, BotTextKeys.AdLinksUnavailable));
                 return;
             }
 
@@ -885,11 +1019,12 @@ public sealed class BotUpdateHandler
 
             if (links.Count == 0)
             {
-                await bot.SendTextMessageAsync(user.TelegramUserId, "Ссылки не удалось сформировать (каналы без username).");
+                await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.AdLinksUnavailableNoUsername));
             }
             else
             {
-                await bot.SendTextMessageAsync(user.TelegramUserId, "Ссылки:\n" + string.Join("\n", links));
+                await bot.SendTextMessageAsync(user.TelegramUserId,
+                    string.Format(BotTexts.Text(lang, BotTextKeys.AdLinksHeader), string.Join("\n", links)));
             }
 
             await bot.AnswerCallbackQueryAsync(cq.Id);
@@ -900,18 +1035,18 @@ public sealed class BotUpdateHandler
         {
             if (!ad.IsPaid)
             {
-                await bot.AnswerCallbackQueryAsync(cq.Id, "Поднятие доступно только для платных объявлений.");
+                await bot.AnswerCallbackQueryAsync(cq.Id, BotTexts.Text(lang, BotTextKeys.BumpPaidOnly));
                 return;
             }
 
             if (ad.Status != AdStatus.Published)
             {
-                await bot.AnswerCallbackQueryAsync(cq.Id, "Поднять можно только опубликованные объявления.");
+                await bot.AnswerCallbackQueryAsync(cq.Id, BotTexts.Text(lang, BotTextKeys.BumpPublishedOnly));
                 return;
             }
 
             await _payments.SendBumpInvoiceAsync(user.TelegramUserId, ad.Id);
-            await bot.SendTextMessageAsync(user.TelegramUserId, "Счёт на поднятие отправлен ✅");
+            await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.BumpInvoiceSent));
             await bot.AnswerCallbackQueryAsync(cq.Id);
             return;
         }
@@ -921,37 +1056,38 @@ public sealed class BotUpdateHandler
 
     private async Task SendReferralLinkAsync(ITelegramBotClient bot, AppUser user)
     {
+        var lang = BotTexts.Normalize(user.Language);
         var enabled = await _settings.GetBoolAsync("App.EnableReferralProgram", _appOptions.EnableReferralProgram);
         if (!enabled)
         {
-            await bot.SendTextMessageAsync(user.TelegramUserId, "Реферальная программа сейчас отключена.");
+            await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.ReferralDisabled));
             return;
         }
 
         var me = await bot.GetMeAsync();
         if (string.IsNullOrWhiteSpace(me.Username))
         {
-            await bot.SendTextMessageAsync(user.TelegramUserId, "Не удалось определить username бота.");
+            await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.BotUsernameMissing));
             return;
         }
 
         var refLink = $"https://t.me/{me.Username}?start=ref_{user.ReferralCode}";
-        var text = "Ваша реферальная ссылка:\n" +
-                   $"{refLink}\n\n" +
-                   "Поделитесь ею, чтобы получать бонусы за оплаты привлечённых пользователей.";
+        var text = string.Format(BotTexts.Text(lang, BotTextKeys.ReferralLinkText), refLink);
 
         await bot.SendTextMessageAsync(user.TelegramUserId, text);
     }
 
     private async Task HandleCreateCallbackAsync(ITelegramBotClient bot, CallbackQuery cq, AppUser user, string data)
     {
+        var lang = BotTexts.Normalize(user.Language);
         var parts = data.Split(':', StringSplitOptions.RemoveEmptyEntries);
 
         // create:cancel
         if (parts.Length == 2 && parts[1] == "cancel")
         {
             await _users.SetStateAsync(user.TelegramUserId, BotStates.Idle, payload: null);
-            await bot.SendTextMessageAsync(user.TelegramUserId, "Ок, отменено.", replyMarkup: BotKeyboards.MainMenu());
+            await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.PublishCanceled),
+                replyMarkup: BotKeyboards.MainMenu(lang));
             await bot.AnswerCallbackQueryAsync(cq.Id);
             return;
         }
@@ -962,7 +1098,7 @@ public sealed class BotUpdateHandler
             var field = parts[2];
             if (!Guid.TryParse(parts[3], out var adId))
             {
-                await bot.AnswerCallbackQueryAsync(cq.Id, "Некорректный ID.");
+                await bot.AnswerCallbackQueryAsync(cq.Id, BotTexts.Text(lang, BotTextKeys.InvalidId));
                 return;
             }
 
@@ -988,7 +1124,8 @@ public sealed class BotUpdateHandler
 
                 case "media":
                     await _users.SetStateAsync(user.TelegramUserId, BotStates.Creating_AwaitMedia, ctx);
-                    await bot.SendTextMessageAsync(user.TelegramUserId, "Отправьте новое фото/видео (или «Пропустить»).", replyMarkup: BotKeyboards.SkipMedia());
+                    await bot.SendTextMessageAsync(user.TelegramUserId, "Отправьте новое фото/видео (или «Пропустить»).",
+                        replyMarkup: BotKeyboards.SkipMedia(lang));
                     break;
 
                 default:
@@ -1005,7 +1142,7 @@ public sealed class BotUpdateHandler
         {
             if (!Guid.TryParse(parts[2], out var adId))
             {
-                await bot.AnswerCallbackQueryAsync(cq.Id, "Некорректный ID.");
+                await bot.AnswerCallbackQueryAsync(cq.Id, BotTexts.Text(lang, BotTextKeys.InvalidId));
                 return;
             }
 
@@ -1015,13 +1152,14 @@ public sealed class BotUpdateHandler
             {
                 var text = pub.Message;
                 if (pub.PublishedLinks.Count > 0)
-                    text += "\n\nСсылки:\n" + string.Join("\n", pub.PublishedLinks);
+                    text += "\n\n" + string.Format(BotTexts.Text(lang, BotTextKeys.PublishLinksHeader),
+                        string.Join("\n", pub.PublishedLinks));
 
-                await bot.SendTextMessageAsync(user.TelegramUserId, text, replyMarkup: BotKeyboards.MainMenu());
+                await bot.SendTextMessageAsync(user.TelegramUserId, text, replyMarkup: BotKeyboards.MainMenu(lang));
             }
             else
             {
-                await bot.SendTextMessageAsync(user.TelegramUserId, pub.Message, replyMarkup: BotKeyboards.MainMenu());
+                await bot.SendTextMessageAsync(user.TelegramUserId, pub.Message, replyMarkup: BotKeyboards.MainMenu(lang));
             }
 
             await _users.SetStateAsync(user.TelegramUserId, BotStates.Idle, payload: null);
@@ -1034,7 +1172,7 @@ public sealed class BotUpdateHandler
         {
             if (!Guid.TryParse(parts[2], out var adId))
             {
-                await bot.AnswerCallbackQueryAsync(cq.Id, "Некорректный ID.");
+                await bot.AnswerCallbackQueryAsync(cq.Id, BotTexts.Text(lang, BotTextKeys.InvalidId));
                 return;
             }
 
@@ -1053,6 +1191,7 @@ public sealed class BotUpdateHandler
 
     private async Task HandleSearchCallbackAsync(ITelegramBotClient bot, CallbackQuery cq, AppUser user, string data)
     {
+        var lang = BotTexts.Normalize(user.Language);
         var parts = data.Split(':', StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length != 3)
         {
@@ -1063,7 +1202,7 @@ public sealed class BotUpdateHandler
         var action = parts[1];
         if (!Guid.TryParse(parts[2], out var adId))
         {
-            await bot.AnswerCallbackQueryAsync(cq.Id, "Некорректный ID.");
+            await bot.AnswerCallbackQueryAsync(cq.Id, BotTexts.Text(lang, BotTextKeys.InvalidId));
             return;
         }
 
@@ -1076,7 +1215,8 @@ public sealed class BotUpdateHandler
                 return;
             }
 
-            await bot.SendTextMessageAsync(user.TelegramUserId, $"Контакты автора:\n{ad.Contacts}");
+            await bot.SendTextMessageAsync(user.TelegramUserId,
+                string.Format(BotTexts.Text(lang, BotTextKeys.AdContactsAuthor), ad.Contacts));
             await bot.AnswerCallbackQueryAsync(cq.Id);
             return;
         }
@@ -1090,7 +1230,7 @@ public sealed class BotUpdateHandler
 
             if (pubs.Count == 0)
             {
-                await bot.AnswerCallbackQueryAsync(cq.Id, "Ссылки недоступны.");
+                await bot.AnswerCallbackQueryAsync(cq.Id, BotTexts.Text(lang, BotTextKeys.AdLinksUnavailable));
                 return;
             }
 
@@ -1106,11 +1246,12 @@ public sealed class BotUpdateHandler
 
             if (links.Count == 0)
             {
-                await bot.SendTextMessageAsync(user.TelegramUserId, "Ссылки не удалось сформировать (каналы без username).");
+                await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.AdLinksUnavailableNoUsername));
             }
             else
             {
-                await bot.SendTextMessageAsync(user.TelegramUserId, "Ссылки:\n" + string.Join("\n", links));
+                await bot.SendTextMessageAsync(user.TelegramUserId,
+                    string.Format(BotTexts.Text(lang, BotTextKeys.AdLinksHeader), string.Join("\n", links)));
             }
 
             await bot.AnswerCallbackQueryAsync(cq.Id);
@@ -1154,6 +1295,117 @@ public sealed class BotUpdateHandler
         await bot.AnswerCallbackQueryAsync(cq.Id);
     }
 
+    private async Task HandleLanguageCallbackAsync(ITelegramBotClient bot, CallbackQuery cq, AppUser user, string data)
+    {
+        var langCode = data.Split(':', 2).LastOrDefault()?.Trim().ToLowerInvariant();
+        if (langCode is not ("ru" or "en"))
+        {
+            await bot.AnswerCallbackQueryAsync(cq.Id);
+            return;
+        }
+
+        await _users.UpdateLanguageAsync(user.TelegramUserId, langCode);
+        var lang = BotTexts.Normalize(langCode);
+
+        await _users.SetStateAsync(user.TelegramUserId, BotStates.Idle);
+        await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.LanguageSet));
+        await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.StartGreeting),
+            replyMarkup: BotKeyboards.MainMenu(lang));
+        await bot.AnswerCallbackQueryAsync(cq.Id);
+    }
+
+    private enum LocationInputMode
+    {
+        Manual,
+        Keyboard
+    }
+
+    private async Task<(LocationInputMode mode, List<string> countries)> GetLocationModeAsync()
+    {
+        var modeRaw = (await _settings.GetAsync("Location.InputMode"))?.Trim();
+        var mode = string.Equals(modeRaw, "keyboard", StringComparison.OrdinalIgnoreCase)
+            ? LocationInputMode.Keyboard
+            : LocationInputMode.Manual;
+
+        var countriesRaw = (await _settings.GetAsync("Location.Countries"))?.Trim();
+        var countries = ParseStringList(countriesRaw);
+
+        if (mode == LocationInputMode.Keyboard && countries.Count == 0)
+            mode = LocationInputMode.Manual;
+
+        return (mode, countries);
+    }
+
+    private async Task<(LocationInputMode mode, List<string> cities)> GetCitiesAsync(string country)
+    {
+        var modeRaw = (await _settings.GetAsync("Location.InputMode"))?.Trim();
+        var mode = string.Equals(modeRaw, "keyboard", StringComparison.OrdinalIgnoreCase)
+            ? LocationInputMode.Keyboard
+            : LocationInputMode.Manual;
+
+        var citiesMapRaw = (await _settings.GetAsync("Location.CitiesMap"))?.Trim();
+        if (string.IsNullOrWhiteSpace(citiesMapRaw))
+            return (LocationInputMode.Manual, new List<string>());
+
+        try
+        {
+            var map = JsonSerializer.Deserialize<Dictionary<string, List<string>>>(citiesMapRaw)
+                      ?? new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+
+            if (map.TryGetValue(country, out var list) && list != null)
+            {
+                if (mode == LocationInputMode.Keyboard && list.Count == 0)
+                    return (LocationInputMode.Manual, new List<string>());
+
+                return (mode, list);
+            }
+        }
+        catch (JsonException)
+        {
+            // ignore invalid settings
+        }
+
+        return (LocationInputMode.Manual, new List<string>());
+    }
+
+    private static List<string> ParseStringList(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return new List<string>();
+
+        try
+        {
+            var list = JsonSerializer.Deserialize<List<string>>(raw);
+            if (list != null && list.Count > 0)
+                return list;
+        }
+        catch (JsonException)
+        {
+            // fallback to csv
+        }
+
+        return raw.Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(x => x.Trim())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .ToList();
+    }
+
+    private async Task SendCountryPromptAsync(ITelegramBotClient bot, AppUser user, bool forceManualPrompt = true)
+    {
+        var lang = BotTexts.Normalize(user.Language);
+        var (mode, countries) = await GetLocationModeAsync();
+
+        if (mode == LocationInputMode.Keyboard && countries.Count > 0)
+        {
+            await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.SelectCountry),
+                replyMarkup: BotKeyboards.LocationOptions(countries, lang));
+            return;
+        }
+
+        if (forceManualPrompt)
+            await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.EnterCountry));
+    }
+
     /// <summary>
     /// Получить ссылку на страницу с тарифами.
     /// Сначала читаем из AppSettings (ключ "App.TelegraphTariffsUrl"),
@@ -1165,12 +1417,12 @@ public sealed class BotUpdateHandler
         return string.IsNullOrWhiteSpace(v) ? _appOptions.TelegraphTariffsUrl : v;
     }
 
-    private static string GetAdStatusLabel(AdStatus status) => status switch
+    private static string GetAdStatusLabel(AdStatus status, string language) => status switch
     {
-        AdStatus.Draft => "Черновик",
-        AdStatus.PendingModeration => "На модерации",
-        AdStatus.Published => "Опубликовано",
-        AdStatus.Rejected => "Отклонено",
+        AdStatus.Draft => BotTexts.Text(language, BotTextKeys.AdStatusDraft),
+        AdStatus.PendingModeration => BotTexts.Text(language, BotTextKeys.AdStatusPending),
+        AdStatus.Published => BotTexts.Text(language, BotTextKeys.AdStatusPublished),
+        AdStatus.Rejected => BotTexts.Text(language, BotTextKeys.AdStatusRejected),
         _ => status.ToString()
     };
 
