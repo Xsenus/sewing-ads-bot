@@ -61,22 +61,27 @@ public static class BotTexts
             [BotTextKeys.MenuHelp] = "Помощь",
             [BotTextKeys.MenuPaidAd] = "Платное объявление",
             [BotTextKeys.MenuLocation] = "Место",
+            [BotTextKeys.MenuLanguage] = "Язык",
             [BotTextKeys.MenuMyAds] = "Мои объявления",
-            [BotTextKeys.MenuReferral] = "Реферальная ссылка",
+            [BotTextKeys.MenuTopUpBalance] = "Пополнить баланс",
             [BotTextKeys.MenuBack] = "Назад",
             [BotTextKeys.PaidTariffs] = "Тарифы",
             [BotTextKeys.PaidAdInfo] = "Чтобы разместить платное объявление, нажмите «Создать объявление» и выберите «Платное».",
             [BotTextKeys.PaidAdInfoTitle] = "Тарифы на платные размещения:",
             [BotTextKeys.ProfileTitle] = "Профиль",
-            [BotTextKeys.LocationNotSet] = "не задано",
-            [BotTextKeys.ProfileLocation] = "Место",
-            [BotTextKeys.ProfileReferral] = "Реф.код",
+            [BotTextKeys.ProfileCountry] = "Страна",
+            [BotTextKeys.ProfileCity] = "Город",
+            [BotTextKeys.ProfileLanguage] = "Язык",
             [BotTextKeys.ProfileBalance] = "Баланс",
-            [BotTextKeys.HelpText] = "Правила:\n" +
-                                     "• Бесплатные объявления: 1 раз в сутки, без фото/видео и без ссылок.\n" +
-                                     "• Контакты: только @username, телефон или email.\n" +
-                                     "• Платные объявления: можно фото/видео и ссылки.\n\n" +
-                                     "Тарифы: {0}",
+            [BotTextKeys.ProfileAdsTitle] = "Объявления",
+            [BotTextKeys.ProfileAdsActive] = "Активных объявлений",
+            [BotTextKeys.ProfileAdsCompleted] = "Завершено",
+            [BotTextKeys.ProfileAdsSold] = "Продано через бот",
+            [BotTextKeys.LocationNotSet] = "не задано",
+            [BotTextKeys.HelpText] = "📌 Ознакомься с правилами размещения в боте.\n" +
+                                     "Если что-то непонятно — напиши в поддержку, мы поможем!",
+            [BotTextKeys.HelpRulesButton] = "Правила",
+            [BotTextKeys.HelpSupportButton] = "Написать в поддержку",
             [BotTextKeys.StartGreeting] = "Привет! Это бот объявлений для швейной индустрии.\n\n" +
                                           "• Бесплатно: без фото/видео и без ссылок, 1 раз в сутки.\n" +
                                           "• Платно: можно фото/видео и ссылки, плюс платное поднятие.\n\n" +
@@ -129,7 +134,19 @@ public static class BotTexts
             [BotTextKeys.BumpInvoiceSent] = "Счёт на поднятие отправлен ✅",
             [BotTextKeys.ReferralDisabled] = "Реферальная программа сейчас отключена.",
             [BotTextKeys.BotUsernameMissing] = "Не удалось определить username бота.",
-            [BotTextKeys.ReferralLinkText] = "Ваша реферальная ссылка:\n{0}\n\nПоделитесь ею, чтобы получать бонусы за оплаты привлечённых пользователей.",
+            [BotTextKeys.ReferralBalanceText] = "Хочешь пополнить баланс? Пригласи друзей!\n\n" +
+                                                "Отправь им ссылку или нажми «Пригласить друга».\n\n" +
+                                                "🔗 Ссылка для копирования:\n{0}\n\n" +
+                                                "🎁 Награды за приглашения:\n" +
+                                                "• 1 приглашенный → +1 размещение\n" +
+                                                "• 2 → +5 размещений\n" +
+                                                "• 3 → Безлимит размещений\n\n" +
+                                                "Рефералы остаются за тобой и после 3-х приглашений.\n" +
+                                                "Будут дополнительные бонусы для активных!",
+            [BotTextKeys.ReferralInviteButton] = "Пригласить друга",
+            [BotTextKeys.ReferralInviteShareText] = "@boardixrubot 👋 Привет!\n\nЕсли надо что-то продать/купить — попробуй этого бота 👇\n\n{0}",
+            [BotTextKeys.SubscriptionText] = "Чтобы продолжить, подпишитесь на каналы:\n{0}\n\nПосле подписки нажмите кнопку проверки ниже.",
+            [BotTextKeys.SubscriptionCheckButton] = "Проверить подписку",
             [BotTextKeys.PublishLinksHeader] = "Ссылки:\n{0}",
             [BotTextKeys.PublishOk] = "Опубликовано.",
             [BotTextKeys.PublishCanceled] = "Ок, отменено.",
@@ -167,22 +184,27 @@ public static class BotTexts
             [BotTextKeys.MenuHelp] = "Help",
             [BotTextKeys.MenuPaidAd] = "Paid ad",
             [BotTextKeys.MenuLocation] = "Location",
+            [BotTextKeys.MenuLanguage] = "Language",
             [BotTextKeys.MenuMyAds] = "My ads",
-            [BotTextKeys.MenuReferral] = "Referral link",
+            [BotTextKeys.MenuTopUpBalance] = "Top up balance",
             [BotTextKeys.MenuBack] = "Back",
             [BotTextKeys.PaidTariffs] = "Tariffs",
             [BotTextKeys.PaidAdInfo] = "To place a paid ad, press “Create ad” and choose “Paid”.",
             [BotTextKeys.PaidAdInfoTitle] = "Paid placement tariffs:",
             [BotTextKeys.ProfileTitle] = "Profile",
-            [BotTextKeys.LocationNotSet] = "not set",
-            [BotTextKeys.ProfileLocation] = "Location",
-            [BotTextKeys.ProfileReferral] = "Ref.code",
+            [BotTextKeys.ProfileCountry] = "Country",
+            [BotTextKeys.ProfileCity] = "City",
+            [BotTextKeys.ProfileLanguage] = "Language",
             [BotTextKeys.ProfileBalance] = "Balance",
-            [BotTextKeys.HelpText] = "Rules:\n" +
-                                     "• Free ads: 1 per day, no photo/video and no links.\n" +
-                                     "• Contacts: only @username, phone, or email.\n" +
-                                     "• Paid ads: photo/video and links allowed.\n\n" +
-                                     "Tariffs: {0}",
+            [BotTextKeys.ProfileAdsTitle] = "Ads",
+            [BotTextKeys.ProfileAdsActive] = "Active ads",
+            [BotTextKeys.ProfileAdsCompleted] = "Completed",
+            [BotTextKeys.ProfileAdsSold] = "Sold via bot",
+            [BotTextKeys.LocationNotSet] = "not set",
+            [BotTextKeys.HelpText] = "📌 Please read the posting rules in the bot.\n" +
+                                     "If something is unclear — message support, we'll help!",
+            [BotTextKeys.HelpRulesButton] = "Rules",
+            [BotTextKeys.HelpSupportButton] = "Contact support",
             [BotTextKeys.StartGreeting] = "Hi! This is a classifieds bot for the sewing industry.\n\n" +
                                           "• Free: no photo/video and no links, once per day.\n" +
                                           "• Paid: photo/video and links allowed, plus paid bumps.\n\n" +
@@ -235,7 +257,19 @@ public static class BotTexts
             [BotTextKeys.BumpInvoiceSent] = "Bump invoice sent ✅",
             [BotTextKeys.ReferralDisabled] = "The referral program is currently disabled.",
             [BotTextKeys.BotUsernameMissing] = "Couldn't determine bot username.",
-            [BotTextKeys.ReferralLinkText] = "Your referral link:\n{0}\n\nShare it to earn bonuses from payments of referred users.",
+            [BotTextKeys.ReferralBalanceText] = "Want to top up your balance? Invite friends!\n\n" +
+                                                "Send them your link or press “Invite a friend”.\n\n" +
+                                                "🔗 Copy link:\n{0}\n\n" +
+                                                "🎁 Rewards for invites:\n" +
+                                                "• 1 invited → +1 placement\n" +
+                                                "• 2 → +5 placements\n" +
+                                                "• 3 → Unlimited placements\n\n" +
+                                                "Referrals stay with you even after 3 invites.\n" +
+                                                "More bonuses will be available for active users!",
+            [BotTextKeys.ReferralInviteButton] = "Invite a friend",
+            [BotTextKeys.ReferralInviteShareText] = "@boardixrubot 👋 Hi!\n\nNeed to sell or buy something? Try this bot 👇\n\n{0}",
+            [BotTextKeys.SubscriptionText] = "To continue, subscribe to the channels:\n{0}\n\nAfter subscribing, press the check button below.",
+            [BotTextKeys.SubscriptionCheckButton] = "Check subscription",
             [BotTextKeys.PublishLinksHeader] = "Links:\n{0}",
             [BotTextKeys.PublishOk] = "Published.",
             [BotTextKeys.PublishCanceled] = "Okay, canceled.",
@@ -277,18 +311,26 @@ public static class BotTextKeys
     public const string MenuHelp = "menu.main.help";
     public const string MenuPaidAd = "menu.main.paid";
     public const string MenuLocation = "menu.profile.location";
+    public const string MenuLanguage = "menu.profile.language";
     public const string MenuMyAds = "menu.profile.myads";
-    public const string MenuReferral = "menu.profile.referral";
+    public const string MenuTopUpBalance = "menu.profile.balance";
     public const string MenuBack = "menu.profile.back";
     public const string PaidTariffs = "paid.tariffs.button";
     public const string PaidAdInfoTitle = "paid.info.title";
     public const string PaidAdInfo = "paid.info.text";
     public const string ProfileTitle = "profile.title";
-    public const string ProfileLocation = "profile.location.label";
-    public const string ProfileReferral = "profile.referral.label";
+    public const string ProfileCountry = "profile.country.label";
+    public const string ProfileCity = "profile.city.label";
+    public const string ProfileLanguage = "profile.language.label";
     public const string ProfileBalance = "profile.balance.label";
+    public const string ProfileAdsTitle = "profile.ads.title";
+    public const string ProfileAdsActive = "profile.ads.active";
+    public const string ProfileAdsCompleted = "profile.ads.completed";
+    public const string ProfileAdsSold = "profile.ads.sold";
     public const string LocationNotSet = "profile.location.not_set";
     public const string HelpText = "help.text";
+    public const string HelpRulesButton = "help.rules.button";
+    public const string HelpSupportButton = "help.support.button";
     public const string StartGreeting = "start.greeting";
     public const string EnterCountry = "location.enter.country";
     public const string EnterCountryShort = "location.enter.country.short";
@@ -341,7 +383,11 @@ public static class BotTextKeys
     public const string BumpInvoiceSent = "ad.bump.invoice_sent";
     public const string ReferralDisabled = "referral.disabled";
     public const string BotUsernameMissing = "bot.username.missing";
-    public const string ReferralLinkText = "referral.link.text";
+    public const string ReferralBalanceText = "referral.balance.text";
+    public const string ReferralInviteButton = "referral.invite.button";
+    public const string ReferralInviteShareText = "referral.invite.share";
+    public const string SubscriptionText = "subscription.text";
+    public const string SubscriptionCheckButton = "subscription.check.button";
     public const string PublishLinksHeader = "publish.links.header";
     public const string PublishOk = "publish.ok";
     public const string PublishCanceled = "publish.canceled";

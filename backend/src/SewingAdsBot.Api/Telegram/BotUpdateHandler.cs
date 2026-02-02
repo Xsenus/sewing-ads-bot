@@ -24,12 +24,14 @@ public sealed class BotUpdateHandler
     private readonly AppDbContext _db;
     private readonly UserService _users;
     private readonly CategoryService _categories;
+    private readonly ChannelService _channels;
     private readonly AdService _ads;
     private readonly PublicationService _publication;
     private readonly PaymentService _payments;
     private readonly PostFormatter _formatter;
     private readonly SearchService _search;
     private readonly ModerationService _moderation;
+    private readonly SubscriptionService _subscriptionService;
     private readonly SettingsService _settings;
     private readonly AppOptions _appOptions;
     private readonly ILogger<BotUpdateHandler> _logger;
@@ -41,12 +43,14 @@ public sealed class BotUpdateHandler
         AppDbContext db,
         UserService users,
         CategoryService categories,
+        ChannelService channels,
         AdService ads,
         PublicationService publication,
         PaymentService payments,
         PostFormatter formatter,
         SearchService search,
         ModerationService moderation,
+        SubscriptionService subscriptionService,
         SettingsService settings,
         IOptions<AppOptions> appOptions,
         ILogger<BotUpdateHandler> logger)
@@ -54,12 +58,14 @@ public sealed class BotUpdateHandler
         _db = db;
         _users = users;
         _categories = categories;
+        _channels = channels;
         _ads = ads;
         _publication = publication;
         _payments = payments;
         _formatter = formatter;
         _search = search;
         _moderation = moderation;
+        _subscriptionService = subscriptionService;
         _settings = settings;
         _appOptions = appOptions.Value;
         _logger = logger;
@@ -150,6 +156,14 @@ public sealed class BotUpdateHandler
             return;
         }
 
+        var state = await _users.GetOrCreateStateAsync(user.TelegramUserId);
+
+        if (state.State == BotStates.AwaitingSubscription)
+        {
+            await SendSubscriptionPromptAsync(bot, user);
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(user.Language))
         {
             await _users.SetStateAsync(user.TelegramUserId, BotStates.ChoosingLanguage);
@@ -158,8 +172,6 @@ public sealed class BotUpdateHandler
                 replyMarkup: BotKeyboards.LanguageSelection());
             return;
         }
-
-        var state = await _users.GetOrCreateStateAsync(user.TelegramUserId);
 
         // Глобальная отмена
         if (BotTexts.Matches(message.Text, lang, BotTextKeys.Cancel))
@@ -176,7 +188,22 @@ public sealed class BotUpdateHandler
             return;
         }
 
+        // Меню профиля
+        if (state.State == BotStates.ProfileMenu)
+        {
+            await HandleProfileMenuAsync(bot, user, message.Text);
+            return;
+        }
+
         if (state.State == BotStates.ChoosingLanguage)
+        {
+            await bot.SendTextMessageAsync(user.TelegramUserId,
+                BotTexts.Text(lang, BotTextKeys.LanguageChooseTitle),
+                replyMarkup: BotKeyboards.LanguageSelection());
+            return;
+        }
+
+        if (state.State == BotStates.ChoosingLanguageProfile)
         {
             await bot.SendTextMessageAsync(user.TelegramUserId,
                 BotTexts.Text(lang, BotTextKeys.LanguageChooseTitle),
@@ -361,12 +388,22 @@ public sealed class BotUpdateHandler
         var parts = text.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
         var payload = parts.Length > 1 ? parts[1].Trim() : null;
 
-        // Реферал: ref_<code>
-        if (!string.IsNullOrWhiteSpace(payload) && payload.StartsWith("ref_", StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrWhiteSpace(payload))
         {
-            var code = payload.Substring("ref_".Length);
-            await _users.TryAttachReferrerAsync(user.TelegramUserId, code);
+            // Реферал: ref_<code>
+            if (payload.StartsWith("ref_", StringComparison.OrdinalIgnoreCase))
+            {
+                var code = payload.Substring("ref_".Length);
+                await _users.TryAttachReferrerAsync(user.TelegramUserId, code);
+            }
+            else if (long.TryParse(payload, out var referrerTelegramUserId))
+            {
+                await _users.TryAttachReferrerByTelegramIdAsync(user.TelegramUserId, referrerTelegramUserId);
+            }
         }
+
+        if (!await EnsureSubscriptionAsync(bot, user))
+            return;
 
         if (string.IsNullOrWhiteSpace(user.Language))
         {
@@ -383,9 +420,7 @@ public sealed class BotUpdateHandler
             return;
         }
 
-        await _users.SetStateAsync(user.TelegramUserId, BotStates.Idle);
-        await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.StartGreeting),
-            replyMarkup: BotKeyboards.MainMenu(lang));
+        await ShowMainMenuAsync(bot, user);
     }
 
     private async Task HandleMainMenuAsync(ITelegramBotClient bot, AppUser user, string? text)
@@ -413,33 +448,7 @@ public sealed class BotUpdateHandler
 
         if (BotTexts.Matches(text, lang, BotTextKeys.MenuHelp))
         {
-            await ShowHelpAsync(bot, user);
-            return;
-        }
-
-        if (BotTexts.Matches(text, lang, BotTextKeys.MenuLocation))
-        {
-            await _users.SetStateAsync(user.TelegramUserId, BotStates.AwaitCountry);
-            await SendCountryPromptAsync(bot, user);
-            return;
-        }
-
-        if (BotTexts.Matches(text, lang, BotTextKeys.MenuMyAds))
-        {
-            await ShowMyAdsAsync(bot, user);
-            return;
-        }
-
-        if (BotTexts.Matches(text, lang, BotTextKeys.MenuReferral))
-        {
-            await SendReferralLinkAsync(bot, user);
-            return;
-        }
-
-        if (BotTexts.Matches(text, lang, BotTextKeys.MenuBack))
-        {
-            await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.MainMenuTitle),
-                replyMarkup: BotKeyboards.MainMenu(lang));
+            await ShowHelpAsync(bot, user, HelpReturnTarget.MainMenu);
             return;
         }
 
@@ -459,31 +468,236 @@ public sealed class BotUpdateHandler
             replyMarkup: BotKeyboards.MainMenu(lang));
     }
 
+    private async Task HandleProfileMenuAsync(ITelegramBotClient bot, AppUser user, string? text)
+    {
+        text ??= string.Empty;
+        var lang = BotTexts.Normalize(user.Language);
+
+        if (BotTexts.Matches(text, lang, BotTextKeys.MenuLocation))
+        {
+            await _users.SetStateAsync(user.TelegramUserId, BotStates.AwaitCountry);
+            await SendCountryPromptAsync(bot, user);
+            return;
+        }
+
+        if (BotTexts.Matches(text, lang, BotTextKeys.MenuLanguage))
+        {
+            await _users.SetStateAsync(user.TelegramUserId, BotStates.ChoosingLanguageProfile);
+            await bot.SendTextMessageAsync(user.TelegramUserId,
+                BotTexts.Text(lang, BotTextKeys.LanguageChooseTitle),
+                replyMarkup: BotKeyboards.LanguageSelection());
+            return;
+        }
+
+        if (BotTexts.Matches(text, lang, BotTextKeys.MenuMyAds))
+        {
+            await ShowMyAdsAsync(bot, user);
+            return;
+        }
+
+        if (BotTexts.Matches(text, lang, BotTextKeys.MenuTopUpBalance))
+        {
+            await ShowReferralBalanceAsync(bot, user);
+            return;
+        }
+
+        if (BotTexts.Matches(text, lang, BotTextKeys.MenuHelp))
+        {
+            await ShowHelpAsync(bot, user, HelpReturnTarget.ProfileMenu);
+            return;
+        }
+
+        if (BotTexts.Matches(text, lang, BotTextKeys.MenuBack))
+        {
+            await ShowMainMenuAsync(bot, user);
+            return;
+        }
+
+        await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.ChooseActionMenu),
+            replyMarkup: BotKeyboards.ProfileMenu(lang));
+    }
+
     private async Task ShowProfileAsync(ITelegramBotClient bot, AppUser user)
     {
         var lang = BotTexts.Normalize(user.Language);
-        var location = (!string.IsNullOrWhiteSpace(user.Country) && !string.IsNullOrWhiteSpace(user.City))
-            ? $"{user.Country}, {user.City}"
-            : BotTexts.Text(lang, BotTextKeys.LocationNotSet);
+        var displayName = user.FirstName ?? user.Username ?? user.TelegramUserId.ToString();
+        var country = string.IsNullOrWhiteSpace(user.Country) ? BotTexts.Text(lang, BotTextKeys.LocationNotSet) : user.Country;
+        var city = string.IsNullOrWhiteSpace(user.City) ? BotTexts.Text(lang, BotTextKeys.LocationNotSet) : user.City;
+        var languageLabel = string.IsNullOrWhiteSpace(user.Language)
+            ? BotTexts.Text(lang, BotTextKeys.LocationNotSet)
+            : user.Language.Trim().ToUpperInvariant();
+        var placementBalance = user.ReferralUnlimitedPlacements ? "∞" : user.ReferralPlacementsBalance.ToString();
 
-        var refLink = $"ref_{user.ReferralCode}";
+        var activeAds = await _db.Ads.CountAsync(x => x.UserId == user.Id && x.Status == AdStatus.Published);
+        var completedAds = await _db.Ads.CountAsync(x => x.UserId == user.Id && x.Status == AdStatus.Rejected);
+        var soldAds = 0;
 
-        var text = $"<b>{BotTexts.Text(lang, BotTextKeys.ProfileTitle)}</b>\n" +
-                   $"{BotTexts.Text(lang, BotTextKeys.ProfileLocation)}: <b>{Escape(location)}</b>\n" +
-                   $"{BotTexts.Text(lang, BotTextKeys.ProfileReferral)}: <code>{Escape(refLink)}</code>\n" +
-                   $"{BotTexts.Text(lang, BotTextKeys.ProfileBalance)}: <b>{user.Balance:0.00}</b>";
+        var text = $"<b>{Escape(displayName)}</b>\n\n" +
+                   $"{BotTexts.Text(lang, BotTextKeys.ProfileCountry)}: <b>{Escape(country)}</b>\n" +
+                   $"{BotTexts.Text(lang, BotTextKeys.ProfileCity)}: <b>{Escape(city)}</b>\n" +
+                   $"{BotTexts.Text(lang, BotTextKeys.ProfileLanguage)}: <b>{Escape(languageLabel)}</b>\n" +
+                   $"{BotTexts.Text(lang, BotTextKeys.ProfileBalance)}: <b>{Escape(placementBalance)}</b>\n\n" +
+                   $"{BotTexts.Text(lang, BotTextKeys.ProfileAdsTitle)}:\n" +
+                   $"├ {BotTexts.Text(lang, BotTextKeys.ProfileAdsActive)} {activeAds}\n" +
+                   $"├ {BotTexts.Text(lang, BotTextKeys.ProfileAdsCompleted)} {completedAds}\n" +
+                   $"└ {BotTexts.Text(lang, BotTextKeys.ProfileAdsSold)} {soldAds}";
 
-        await _users.SetStateAsync(user.TelegramUserId, BotStates.Idle);
+        await _users.SetStateAsync(user.TelegramUserId, BotStates.ProfileMenu);
         await bot.SendTextMessageAsync(user.TelegramUserId, text, parseMode: ParseMode.Html, replyMarkup: BotKeyboards.ProfileMenu(lang));
     }
 
-    private async Task ShowHelpAsync(ITelegramBotClient bot, AppUser user)
+    private async Task ShowHelpAsync(ITelegramBotClient bot, AppUser user, HelpReturnTarget returnTarget)
     {
         var lang = BotTexts.Normalize(user.Language);
-        var tariffsUrl = await GetTariffsUrlAsync();
-        var text = string.Format(BotTexts.Text(lang, BotTextKeys.HelpText), tariffsUrl);
+        var text = await _settings.GetAsync("Bot.Help.Text");
+        if (string.IsNullOrWhiteSpace(text))
+            text = BotTexts.Text(lang, BotTextKeys.HelpText);
 
-        await bot.SendTextMessageAsync(user.TelegramUserId, text, replyMarkup: BotKeyboards.MainMenu(lang));
+        var rulesText = await _settings.GetAsync("Bot.Help.RulesButtonText") ?? BotTexts.Text(lang, BotTextKeys.HelpRulesButton);
+        var rulesUrl = await _settings.GetAsync("Bot.Help.RulesUrl") ?? await GetTariffsUrlAsync();
+        var supportText = await _settings.GetAsync("Bot.Help.SupportButtonText") ?? BotTexts.Text(lang, BotTextKeys.HelpSupportButton);
+        var supportUrl = await _settings.GetAsync("Bot.Help.SupportUrl") ?? string.Empty;
+        var backText = BotTexts.Text(lang, BotTextKeys.MenuBack);
+        var backCallback = returnTarget == HelpReturnTarget.ProfileMenu ? "help:back:profile" : "help:back:main";
+
+        var kb = BotKeyboards.HelpMenu(rulesText, rulesUrl, supportText, supportUrl, backText, backCallback);
+
+        await bot.SendTextMessageAsync(user.TelegramUserId, text, replyMarkup: kb);
+    }
+
+    private async Task ShowReferralBalanceAsync(ITelegramBotClient bot, AppUser user)
+    {
+        var lang = BotTexts.Normalize(user.Language);
+        var enabled = await _settings.GetBoolAsync("App.EnableReferralProgram", _appOptions.EnableReferralProgram);
+        if (!enabled)
+        {
+            await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.ReferralDisabled));
+            return;
+        }
+
+        var me = await bot.GetMeAsync();
+        if (string.IsNullOrWhiteSpace(me.Username))
+        {
+            await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.BotUsernameMissing));
+            return;
+        }
+
+        var refLink = $"https://t.me/{me.Username}?start={user.TelegramUserId}";
+        var messageTemplate = await _settings.GetAsync("Bot.Referral.BalanceText");
+        if (string.IsNullOrWhiteSpace(messageTemplate))
+            messageTemplate = BotTexts.Text(lang, BotTextKeys.ReferralBalanceText);
+
+        var message = FormatTemplate(messageTemplate, refLink);
+        var shareTemplate = await _settings.GetAsync("Bot.Referral.InviteShareText");
+        if (string.IsNullOrWhiteSpace(shareTemplate))
+            shareTemplate = BotTexts.Text(lang, BotTextKeys.ReferralInviteShareText);
+
+        var shareText = FormatTemplate(shareTemplate, refLink);
+        var inviteButtonText = await _settings.GetAsync("Bot.Referral.InviteButtonText") ?? BotTexts.Text(lang, BotTextKeys.ReferralInviteButton);
+        var shareUrl = $"https://t.me/share/url?url={Uri.EscapeDataString(refLink)}&text={Uri.EscapeDataString(shareText)}";
+        var backText = BotTexts.Text(lang, BotTextKeys.MenuBack);
+
+        var kb = BotKeyboards.InviteFriendMenu(inviteButtonText, shareUrl, backText, "profile:back");
+
+        await bot.SendTextMessageAsync(user.TelegramUserId, message, replyMarkup: kb);
+    }
+
+    private async Task ShowMainMenuAsync(ITelegramBotClient bot, AppUser user)
+    {
+        var lang = BotTexts.Normalize(user.Language);
+        await _users.SetStateAsync(user.TelegramUserId, BotStates.Idle);
+        await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.StartGreeting),
+            replyMarkup: BotKeyboards.MainMenu(lang));
+    }
+
+    private async Task<bool> EnsureSubscriptionAsync(ITelegramBotClient bot, AppUser user)
+    {
+        var requiredChannels = await GetRequiredSubscriptionChannelsAsync();
+        if (requiredChannels.Count == 0)
+            return true;
+
+        foreach (var channel in requiredChannels)
+        {
+            var ok = await _subscriptionService.IsSubscribedAsync(user.TelegramUserId, channel.Username);
+            if (!ok)
+            {
+                await SendSubscriptionPromptAsync(bot, user, requiredChannels);
+                return false;
+            }
+        }
+
+        await _users.SetStateAsync(user.TelegramUserId, BotStates.Idle);
+        return true;
+    }
+
+    private async Task SendSubscriptionPromptAsync(
+        ITelegramBotClient bot,
+        AppUser user,
+        List<(string Title, string Username, string Url)>? cachedChannels = null)
+    {
+        var lang = BotTexts.Normalize(user.Language);
+        var requiredChannels = cachedChannels ?? await GetRequiredSubscriptionChannelsAsync();
+        if (requiredChannels.Count == 0)
+            return;
+
+        await _users.SetStateAsync(user.TelegramUserId, BotStates.AwaitingSubscription);
+
+        var messageTemplate = await _settings.GetAsync("Bot.Subscription.Text");
+        if (string.IsNullOrWhiteSpace(messageTemplate))
+            messageTemplate = BotTexts.Text(lang, BotTextKeys.SubscriptionText);
+
+        var links = string.Join("\n", requiredChannels.Select(x => x.Url));
+        var message = FormatTemplate(messageTemplate, links);
+
+        var checkText = await _settings.GetAsync("Bot.Subscription.CheckButtonText") ?? BotTexts.Text(lang, BotTextKeys.SubscriptionCheckButton);
+        var keyboard = BotKeyboards.SubscriptionMenu(requiredChannels.Select(x => (x.Title, x.Url)), checkText);
+
+        await bot.SendTextMessageAsync(user.TelegramUserId, message, replyMarkup: keyboard);
+    }
+
+    private async Task<List<(string Title, string Username, string Url)>> GetRequiredSubscriptionChannelsAsync()
+    {
+        var result = new List<(string Title, string Username, string Url)>();
+
+        var globalSub = (await _settings.GetAsync("App.GlobalRequiredSubscriptionChannel"))?.Trim();
+        if (string.IsNullOrWhiteSpace(globalSub))
+            globalSub = _appOptions.GlobalRequiredSubscriptionChannel;
+
+        if (!string.IsNullOrWhiteSpace(globalSub))
+            AddChannel(result, globalSub, globalSub);
+
+        var requiredRaw = (await _settings.GetAsync("App.RequiredSubscriptionChannels"))?.Trim();
+        if (string.IsNullOrWhiteSpace(requiredRaw))
+            requiredRaw = _appOptions.RequiredSubscriptionChannels;
+
+        foreach (var channel in ParseStringList(requiredRaw))
+            AddChannel(result, channel, channel);
+
+        var channels = await _channels.GetActiveAsync();
+        foreach (var channel in channels.Where(x => x.RequireSubscription))
+        {
+            var username = channel.SubscriptionChannelUsername ?? channel.TelegramUsername;
+            if (string.IsNullOrWhiteSpace(username))
+                continue;
+
+            var title = string.IsNullOrWhiteSpace(channel.Title) ? username : channel.Title;
+            AddChannel(result, title, username);
+        }
+
+        return result
+            .GroupBy(x => x.Username, StringComparer.OrdinalIgnoreCase)
+            .Select(x => x.First())
+            .ToList();
+    }
+
+    private static void AddChannel(List<(string Title, string Username, string Url)> list, string title, string username)
+    {
+        var cleaned = username.Trim().TrimStart('@');
+        if (string.IsNullOrWhiteSpace(cleaned))
+            return;
+
+        var displayTitle = string.IsNullOrWhiteSpace(title) ? $"@{cleaned}" : title;
+        list.Add((displayTitle, cleaned, $"https://t.me/{cleaned}"));
     }
 
     private async Task StartCreateFlowAsync(ITelegramBotClient bot, AppUser user)
@@ -533,6 +747,51 @@ public sealed class BotUpdateHandler
         if (data.StartsWith("lang:", StringComparison.Ordinal))
         {
             await HandleLanguageCallbackAsync(bot, cq, user, data);
+            return;
+        }
+
+        if (data == "sub:check")
+        {
+            var ok = await EnsureSubscriptionAsync(bot, user);
+            if (ok)
+            {
+                if (string.IsNullOrWhiteSpace(user.Language))
+                {
+                    await _users.SetStateAsync(user.TelegramUserId, BotStates.ChoosingLanguage);
+                    await bot.SendTextMessageAsync(user.TelegramUserId,
+                        BotTexts.Text(BotTexts.Normalize(user.Language), BotTextKeys.LanguageChooseTitle),
+                        replyMarkup: BotKeyboards.LanguageSelection());
+                }
+                else
+                {
+                    await ShowMainMenuAsync(bot, user);
+                }
+            }
+
+            await bot.AnswerCallbackQueryAsync(cq.Id);
+            return;
+        }
+
+        if (data.StartsWith("help:back:", StringComparison.Ordinal))
+        {
+            var target = data.Split(':', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
+            if (string.Equals(target, "profile", StringComparison.OrdinalIgnoreCase))
+            {
+                await ShowProfileAsync(bot, user);
+            }
+            else
+            {
+                await ShowMainMenuAsync(bot, user);
+            }
+
+            await bot.AnswerCallbackQueryAsync(cq.Id);
+            return;
+        }
+
+        if (data == "profile:back")
+        {
+            await ShowProfileAsync(bot, user);
+            await bot.AnswerCallbackQueryAsync(cq.Id);
             return;
         }
 
@@ -900,7 +1159,7 @@ public sealed class BotUpdateHandler
         if (ads.Count == 0)
         {
             await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.NoAdsYet),
-                replyMarkup: BotKeyboards.MainMenu(lang));
+                replyMarkup: BotKeyboards.ProfileMenu(lang));
             return;
         }
 
@@ -1052,29 +1311,6 @@ public sealed class BotUpdateHandler
         }
 
         await bot.AnswerCallbackQueryAsync(cq.Id);
-    }
-
-    private async Task SendReferralLinkAsync(ITelegramBotClient bot, AppUser user)
-    {
-        var lang = BotTexts.Normalize(user.Language);
-        var enabled = await _settings.GetBoolAsync("App.EnableReferralProgram", _appOptions.EnableReferralProgram);
-        if (!enabled)
-        {
-            await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.ReferralDisabled));
-            return;
-        }
-
-        var me = await bot.GetMeAsync();
-        if (string.IsNullOrWhiteSpace(me.Username))
-        {
-            await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.BotUsernameMissing));
-            return;
-        }
-
-        var refLink = $"https://t.me/{me.Username}?start=ref_{user.ReferralCode}";
-        var text = string.Format(BotTexts.Text(lang, BotTextKeys.ReferralLinkText), refLink);
-
-        await bot.SendTextMessageAsync(user.TelegramUserId, text);
     }
 
     private async Task HandleCreateCallbackAsync(ITelegramBotClient bot, CallbackQuery cq, AppUser user, string data)
@@ -1305,13 +1541,28 @@ public sealed class BotUpdateHandler
         }
 
         await _users.UpdateLanguageAsync(user.TelegramUserId, langCode);
+        user.Language = langCode;
         var lang = BotTexts.Normalize(langCode);
 
-        await _users.SetStateAsync(user.TelegramUserId, BotStates.Idle);
+        var state = await _users.GetOrCreateStateAsync(user.TelegramUserId);
         await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.LanguageSet));
-        await bot.SendTextMessageAsync(user.TelegramUserId, BotTexts.Text(lang, BotTextKeys.StartGreeting),
-            replyMarkup: BotKeyboards.MainMenu(lang));
+
+        if (state.State == BotStates.ChoosingLanguageProfile)
+        {
+            await ShowProfileAsync(bot, user);
+        }
+        else
+        {
+            await ShowMainMenuAsync(bot, user);
+        }
+
         await bot.AnswerCallbackQueryAsync(cq.Id);
+    }
+
+    private enum HelpReturnTarget
+    {
+        MainMenu,
+        ProfileMenu
     }
 
     private enum LocationInputMode
@@ -1425,6 +1676,16 @@ public sealed class BotUpdateHandler
         AdStatus.Rejected => BotTexts.Text(language, BotTextKeys.AdStatusRejected),
         _ => status.ToString()
     };
+
+    private static string FormatTemplate(string template, string link)
+    {
+        if (string.IsNullOrWhiteSpace(template))
+            return link;
+
+        return template.Contains("{0}", StringComparison.Ordinal)
+            ? string.Format(template, link)
+            : $"{template}\n{link}";
+    }
 
     private static string Escape(string? s)
         => System.Net.WebUtility.HtmlEncode(s ?? string.Empty);

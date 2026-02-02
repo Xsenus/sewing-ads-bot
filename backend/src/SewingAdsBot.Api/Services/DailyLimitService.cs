@@ -26,9 +26,14 @@ public sealed class DailyLimitService
     }
 
     /// <summary>
+    /// Результат проверки бесплатного размещения.
+    /// </summary>
+    public sealed record FreePublishAllowance(bool Ok, int Used, int Limit, string PeriodLabel, bool UsesReferralBonus, bool IsUnlimited);
+
+    /// <summary>
     /// Проверить, можно ли опубликовать бесплатное объявление сегодня (UTC).
     /// </summary>
-    public async Task<(bool ok, int used, int limit, string periodLabel)> CanPublishFreeAsync(long telegramUserId)
+    public async Task<FreePublishAllowance> CanPublishFreeAsync(long telegramUserId)
     {
         var now = DateTime.UtcNow;
         var periodRaw = (await _settings.GetAsync("Limits.FreeAdsPeriod"))?.Trim();
@@ -38,7 +43,7 @@ public sealed class DailyLimitService
             _limits.FreeAdsPerPeriod > 0 ? _limits.FreeAdsPerPeriod : _limits.FreeAdsPerCalendarDay);
 
         if (limit <= 0 || period.Equals("None", StringComparison.OrdinalIgnoreCase))
-            return (true, 0, limit, "Без ограничений");
+            return new FreePublishAllowance(true, 0, limit, "Без ограничений", UsesReferralBonus: false, IsUnlimited: true);
 
         var (startDate, endDate, label) = GetPeriodRange(now, period);
 
@@ -50,13 +55,41 @@ public sealed class DailyLimitService
             .Select(x => (int?)x.Count)
             .SumAsync() ?? 0;
 
-        return (used < limit, used, limit, label);
+        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(x => x.TelegramUserId == telegramUserId);
+        if (user?.ReferralUnlimitedPlacements == true)
+            return new FreePublishAllowance(true, used, limit, label, UsesReferralBonus: false, IsUnlimited: true);
+
+        if (used < limit)
+            return new FreePublishAllowance(true, used, limit, label, UsesReferralBonus: false, IsUnlimited: false);
+
+        if (user?.ReferralPlacementsBalance > 0)
+            return new FreePublishAllowance(true, used, limit, label, UsesReferralBonus: true, IsUnlimited: false);
+
+        return new FreePublishAllowance(false, used, limit, label, UsesReferralBonus: false, IsUnlimited: false);
     }
 
     /// <summary>
-    /// Увеличить счётчик публикаций бесплатных объявлений на сегодня (UTC).
+    /// Зарегистрировать публикацию бесплатного объявления.
     /// </summary>
-    public async Task IncrementFreePublishAsync(long telegramUserId)
+    public async Task RegisterFreePublishAsync(long telegramUserId, bool usesReferralBonus)
+    {
+        if (usesReferralBonus)
+        {
+            var user = await _db.Users.FirstOrDefaultAsync(x => x.TelegramUserId == telegramUserId);
+            if (user == null)
+                return;
+
+            if (user.ReferralPlacementsBalance > 0)
+                user.ReferralPlacementsBalance -= 1;
+
+            await _db.SaveChangesAsync();
+            return;
+        }
+
+        await IncrementDailyCounterAsync(telegramUserId);
+    }
+
+    private async Task IncrementDailyCounterAsync(long telegramUserId)
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
