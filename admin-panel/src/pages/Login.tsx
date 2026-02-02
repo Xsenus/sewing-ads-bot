@@ -9,7 +9,7 @@ import { setToken } from '../auth';
 export default function Login() {
   const nav = useNavigate();
   const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin');
+  const [password, setPassword] = useState('admin12345');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -34,6 +34,7 @@ export default function Login() {
         <h2>Вход в админку</h2>
         <p className="muted">
           Логин/пароль по умолчанию задаются в <code>backend/src/SewingAdsBot.Api/appsettings.json</code> (секция <code>Admin</code>).
+          Если админ уже создан в БД, используются его актуальные значения.
         </p>
 
         <form onSubmit={onSubmit}>
