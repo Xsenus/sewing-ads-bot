@@ -2,6 +2,7 @@ using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.Extensions.Options;
 using Prometheus;
 using Serilog;
 using SewingAdsBot.Api.Data;
@@ -159,6 +160,15 @@ using (var scope = app.Services.CreateScope())
         scope.ServiceProvider.GetRequiredService<AdminAuthService>());
 
     await seeder.SeedAsync();
+
+    var settingsSeeder = new AppSettingsSeeder(
+        scope.ServiceProvider.GetRequiredService<SettingsService>(),
+        scope.ServiceProvider.GetRequiredService<IConfiguration>(),
+        scope.ServiceProvider.GetRequiredService<IOptions<AppOptions>>(),
+        scope.ServiceProvider.GetRequiredService<IOptions<LimitOptions>>(),
+        scope.ServiceProvider.GetRequiredService<IOptions<TelegramOptions>>());
+
+    await settingsSeeder.SeedAsync();
 }
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
