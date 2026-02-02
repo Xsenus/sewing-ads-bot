@@ -17,6 +17,21 @@ public static class BotStates
     public const string ChoosingLanguage = "ChoosingLanguage";
 
     /// <summary>
+    /// Ожидаем выбор языка из профиля.
+    /// </summary>
+    public const string ChoosingLanguageProfile = "ChoosingLanguageProfile";
+
+    /// <summary>
+    /// Ожидаем подписку на обязательные каналы.
+    /// </summary>
+    public const string AwaitingSubscription = "AwaitingSubscription";
+
+    /// <summary>
+    /// Меню профиля.
+    /// </summary>
+    public const string ProfileMenu = "ProfileMenu";
+
+    /// <summary>
     /// Ожидаем ввод страны.
     /// </summary>
     public const string AwaitCountry = "AwaitCountry";

@@ -15,8 +15,7 @@ public static class BotKeyboards
         => new(new[]
         {
             new KeyboardButton[] { BotTexts.Text(language, BotTextKeys.MenuCreateAd), BotTexts.Text(language, BotTextKeys.MenuSearchAd) },
-            new KeyboardButton[] { BotTexts.Text(language, BotTextKeys.MenuProfile), BotTexts.Text(language, BotTextKeys.MenuHelp) },
-            new KeyboardButton[] { BotTexts.Text(language, BotTextKeys.MenuPaidAd) }
+            new KeyboardButton[] { BotTexts.Text(language, BotTextKeys.MenuProfile), BotTexts.Text(language, BotTextKeys.MenuHelp) }
         })
         {
             ResizeKeyboard = true
@@ -28,8 +27,11 @@ public static class BotKeyboards
     public static ReplyKeyboardMarkup ProfileMenu(string language)
         => new(new[]
         {
-            new KeyboardButton[] { BotTexts.Text(language, BotTextKeys.MenuLocation), BotTexts.Text(language, BotTextKeys.MenuMyAds) },
-            new KeyboardButton[] { BotTexts.Text(language, BotTextKeys.MenuReferral), BotTexts.Text(language, BotTextKeys.MenuBack) }
+            new KeyboardButton[] { BotTexts.Text(language, BotTextKeys.MenuLocation), BotTexts.Text(language, BotTextKeys.MenuLanguage) },
+            new KeyboardButton[] { BotTexts.Text(language, BotTextKeys.MenuMyAds) },
+            new KeyboardButton[] { BotTexts.Text(language, BotTextKeys.MenuTopUpBalance) },
+            new KeyboardButton[] { BotTexts.Text(language, BotTextKeys.MenuHelp) },
+            new KeyboardButton[] { BotTexts.Text(language, BotTextKeys.MenuBack) }
         })
         {
             ResizeKeyboard = true
@@ -196,4 +198,68 @@ public static class BotKeyboards
             OneTimeKeyboard = true
         };
     }
+
+    /// <summary>
+    /// Клавиатура помощи (inline).
+    /// </summary>
+    public static InlineKeyboardMarkup HelpMenu(string rulesText, string rulesUrl, string supportText, string supportUrl, string backText, string backCallback)
+    {
+        var rows = new List<List<InlineKeyboardButton>>();
+
+        if (!string.IsNullOrWhiteSpace(rulesUrl))
+        {
+            rows.Add(new List<InlineKeyboardButton>
+            {
+                InlineKeyboardButton.WithUrl(rulesText, rulesUrl)
+            });
+        }
+
+        if (!string.IsNullOrWhiteSpace(supportUrl))
+        {
+            rows.Add(new List<InlineKeyboardButton>
+            {
+                InlineKeyboardButton.WithUrl(supportText, supportUrl)
+            });
+        }
+
+        rows.Add(new List<InlineKeyboardButton>
+        {
+            InlineKeyboardButton.WithCallbackData(backText, backCallback)
+        });
+
+        return new InlineKeyboardMarkup(rows);
+    }
+
+    /// <summary>
+    /// Клавиатура проверки подписки на каналы (inline).
+    /// </summary>
+    public static InlineKeyboardMarkup SubscriptionMenu(IEnumerable<(string title, string url)> channels, string checkText)
+    {
+        var rows = new List<List<InlineKeyboardButton>>();
+
+        foreach (var channel in channels)
+        {
+            rows.Add(new List<InlineKeyboardButton>
+            {
+                InlineKeyboardButton.WithUrl(channel.title, channel.url)
+            });
+        }
+
+        rows.Add(new List<InlineKeyboardButton>
+        {
+            InlineKeyboardButton.WithCallbackData(checkText, "sub:check")
+        });
+
+        return new InlineKeyboardMarkup(rows);
+    }
+
+    /// <summary>
+    /// Клавиатура для приглашения друзей (inline).
+    /// </summary>
+    public static InlineKeyboardMarkup InviteFriendMenu(string inviteText, string inviteUrl, string backText, string backCallback)
+        => new(new[]
+        {
+            new[] { InlineKeyboardButton.WithUrl(inviteText, inviteUrl) },
+            new[] { InlineKeyboardButton.WithCallbackData(backText, backCallback) }
+        });
 }

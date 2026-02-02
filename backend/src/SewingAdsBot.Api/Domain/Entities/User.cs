@@ -59,6 +59,21 @@ public sealed class User
     public string ReferralCode { get; set; } = string.Empty;
 
     /// <summary>
+    /// Количество приглашённых пользователей.
+    /// </summary>
+    public int ReferralInvitesCount { get; set; }
+
+    /// <summary>
+    /// Баланс бесплатных размещений за приглашения.
+    /// </summary>
+    public int ReferralPlacementsBalance { get; set; }
+
+    /// <summary>
+    /// Признак безлимитных размещений за приглашения.
+    /// </summary>
+    public bool ReferralUnlimitedPlacements { get; set; }
+
+    /// <summary>
     /// Внутренний ID пользователя-реферера (кто пригласил).
     /// </summary>
     public Guid? ReferrerUserId { get; set; }

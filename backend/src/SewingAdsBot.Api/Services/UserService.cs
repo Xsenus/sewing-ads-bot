@@ -73,6 +73,32 @@ public sealed class UserService
             return false;
 
         user.ReferrerUserId = referrer.Id;
+        ApplyReferralInviteReward(referrer);
+        await _db.SaveChangesAsync();
+        return true;
+    }
+
+    /// <summary>
+    /// Привязать реферала к рефереру по Telegram ID, если ещё не привязан.
+    /// </summary>
+    public async Task<bool> TryAttachReferrerByTelegramIdAsync(long telegramUserId, long referrerTelegramUserId)
+    {
+        if (referrerTelegramUserId <= 0 || referrerTelegramUserId == telegramUserId)
+            return false;
+
+        var user = await _db.Users.FirstOrDefaultAsync(x => x.TelegramUserId == telegramUserId);
+        if (user == null)
+            return false;
+
+        if (user.ReferrerUserId != null)
+            return false;
+
+        var referrer = await _db.Users.FirstOrDefaultAsync(x => x.TelegramUserId == referrerTelegramUserId);
+        if (referrer == null || referrer.Id == user.Id)
+            return false;
+
+        user.ReferrerUserId = referrer.Id;
+        ApplyReferralInviteReward(referrer);
         await _db.SaveChangesAsync();
         return true;
     }
@@ -178,5 +204,17 @@ public sealed class UserService
         }
 
         return new string(buffer[position..]);
+    }
+
+    private static void ApplyReferralInviteReward(User referrer)
+    {
+        referrer.ReferralInvitesCount += 1;
+
+        if (referrer.ReferralInvitesCount == 1)
+            referrer.ReferralPlacementsBalance += 1;
+        else if (referrer.ReferralInvitesCount == 2)
+            referrer.ReferralPlacementsBalance += 5;
+        else if (referrer.ReferralInvitesCount >= 3)
+            referrer.ReferralUnlimitedPlacements = true;
     }
 }

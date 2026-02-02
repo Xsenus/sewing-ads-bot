@@ -115,16 +115,18 @@ public sealed class PublicationService
             }
         }
 
+        DailyLimitService.FreePublishAllowance? allowance = null;
+
         // 2) Лимит бесплатных (календарный день)
         if (!ad.IsPaid)
         {
-            var (ok, used, limit, periodLabel) = await _dailyLimit.CanPublishFreeAsync(telegramUserId);
-            if (!ok)
+            allowance = await _dailyLimit.CanPublishFreeAsync(telegramUserId);
+            if (!allowance.Ok)
             {
                 return new PublicationResult
                 {
                     Ok = false,
-                    Message = $"Лимит бесплатных объявлений: {limit} за {periodLabel}. Использовано: {used}."
+                    Message = $"Лимит бесплатных объявлений: {allowance.Limit} за {allowance.PeriodLabel}. Использовано: {allowance.Used}."
                 };
             }
         }
@@ -238,7 +240,7 @@ public sealed class PublicationService
         // 8) Увеличиваем суточный счётчик для бесплатных только если объявление действительно принято
         var accepted = publishedLinks.Count > 0 || pending > 0;
         if (!ad.IsPaid && accepted)
-            await _dailyLimit.IncrementFreePublishAsync(telegramUserId);
+            await _dailyLimit.RegisterFreePublishAsync(telegramUserId, allowance?.UsesReferralBonus ?? false);
 
         result.PublishedLinks = publishedLinks;
         result.PendingModerationCount = pending;
