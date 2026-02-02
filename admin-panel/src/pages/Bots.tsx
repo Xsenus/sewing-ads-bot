@@ -4,11 +4,13 @@ import ProtectedRoute from '../components/ProtectedRoute';
 import ConfirmDialog from '../components/ConfirmDialog';
 import {
   BotChannel,
+  BotChat,
   TelegramBot,
   createBot,
   deleteBot,
   disableBot,
   getBotChannels,
+  getBotChats,
   getBots,
   pauseBot,
   refreshBot,
@@ -34,6 +36,7 @@ const statusColors: Record<number, string> = {
 export default function BotsPage() {
   const [bots, setBots] = useState<TelegramBot[]>([]);
   const [channels, setChannels] = useState<BotChannel[]>([]);
+  const [chats, setChats] = useState<BotChat[]>([]);
   const [activeBotId, setActiveBotId] = useState<string | null>(null);
   const [token, setToken] = useState('');
   const [cloneFromBotId, setCloneFromBotId] = useState<string>('');
@@ -52,9 +55,24 @@ export default function BotsPage() {
     title: string;
     body: string;
     onConfirm: () => Promise<void>;
+    confirmLabel?: string;
+    tone?: 'primary' | 'danger';
   } | null>(null);
 
   const activeBot = useMemo(() => bots.find((b) => b.id === activeBotId) ?? null, [bots, activeBotId]);
+  const chatBuckets = useMemo(() => {
+    const channels: BotChat[] = [];
+    const chatsList: BotChat[] = [];
+    chats.forEach((chat) => {
+      const type = chat.chatType.toLowerCase();
+      if (type === 'channel') {
+        channels.push(chat);
+      } else {
+        chatsList.push(chat);
+      }
+    });
+    return { channels, chats: chatsList };
+  }, [chats]);
   const defaultAvatar =
     'data:image/svg+xml;utf8,' +
     encodeURIComponent(
@@ -98,6 +116,16 @@ export default function BotsPage() {
     }
   }
 
+  async function loadChats(botId: string) {
+    try {
+      setChats([]);
+      const data = await getBotChats(botId);
+      setChats(data);
+    } catch (e: any) {
+      setError(e?.message ?? 'Не удалось загрузить чаты бота.');
+    }
+  }
+
   useEffect(() => {
     void loadBots();
   }, []);
@@ -105,6 +133,7 @@ export default function BotsPage() {
   useEffect(() => {
     if (activeBotId) {
       void loadChannels(activeBotId);
+      void loadChats(activeBotId);
     }
   }, [activeBotId, photoKey]);
 
@@ -161,8 +190,13 @@ export default function BotsPage() {
     setPhotoFile(null);
   }, [activeBot]);
 
-  const openConfirm = (title: string, body: string, action: () => Promise<void>) => {
-    setConfirm({ title, body, onConfirm: action });
+  const openConfirm = (
+    title: string,
+    body: string,
+    action: () => Promise<void>,
+    options?: { confirmLabel?: string; tone?: 'primary' | 'danger' },
+  ) => {
+    setConfirm({ title, body, onConfirm: action, ...options });
   };
 
   const handleAdd = async () => {
@@ -222,7 +256,10 @@ export default function BotsPage() {
       await action();
       if (reload) {
         await loadBots();
-        if (activeBotId) await loadChannels(activeBotId);
+        if (activeBotId) {
+          await loadChannels(activeBotId);
+          await loadChats(activeBotId);
+        }
       }
       setMessage(successMessage);
     } catch (e: any) {
@@ -242,255 +279,319 @@ export default function BotsPage() {
           </div>
         </div>
 
-        <div className="grid grid-2">
-          <div className="card">
-            <h3>Добавить бота</h3>
-            <p className="muted">После сохранения бот сразу запускается и подтягивает профиль, команды и описание.</p>
-            <div className="row">
-              <label>Bot API токен</label>
-              <input
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                placeholder="123456:AA..."
-              />
-            </div>
-            <div className="row">
-              <label>Скопировать настройки</label>
-              <select value={cloneFromBotId} onChange={(e) => setCloneFromBotId(e.target.value)}>
-                <option value="">Не копировать</option>
-                {bots.map((bot) => (
-                  <option key={bot.id} value={bot.id}>
-                    {bot.name ?? 'Без имени'} (@{bot.username ?? 'unknown'})
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex">
-              <button className="primary" disabled={loading || !token.trim()} onClick={handleAdd}>
-                Добавить и запустить
-              </button>
-              <button className="ghost" onClick={loadBots} disabled={loading}>
-                Обновить список
-              </button>
-            </div>
-            {error && <p className="error">{error}</p>}
-            {message && <p className="success">{message}</p>}
-          </div>
-
-          <div className="card">
-            <h3>Список ботов</h3>
-            {loading && <p className="muted">Загрузка...</p>}
-            <div className="bot-list">
-              {bots.map((bot) => (
-                <button
-                  key={bot.id}
-                  className={`bot-list-item ${activeBotId === bot.id ? 'active' : ''}`}
-                  onClick={() => setActiveBotId(bot.id)}
-                >
-                  <div className="bot-list-title">
-                    <span className="badge">{statusLabels[bot.status] ?? 'Неизвестно'}</span>
-                    <strong>{bot.name ?? 'Без имени'}</strong>
-                  </div>
-                  <span className="muted">@{bot.username ?? 'unknown'}</span>
-                </button>
-              ))}
-              {bots.length === 0 && <p className="muted">Боты ещё не добавлены.</p>}
-            </div>
-          </div>
-        </div>
-
-        {activeBot && (
-          <div className="grid grid-3">
+        <div className="bots-layout">
+          <div className="bots-aside">
             <div className="card">
-              <div className="bot-profile">
-                <img
-                  src={photoUrl ?? defaultAvatar}
-                  alt={activeBot.name ?? 'Bot'}
+              <h3>Добавить бота</h3>
+              <p className="muted">После сохранения бот сразу запускается и подтягивает профиль, команды и описание.</p>
+              <div className="row">
+                <label>Bot API токен</label>
+                <input
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  placeholder="123456:AA..."
                 />
-                <div>
-                  <h3>{activeBot.name ?? 'Без имени'}</h3>
-                  <p className="muted">@{activeBot.username ?? 'unknown'}</p>
-                  <p className={`badge ${statusColors[activeBot.status] ?? ''}`}>
-                    {statusLabels[activeBot.status] ?? 'Неизвестно'}
-                  </p>
-                </div>
               </div>
-              <div className="bot-meta">
-                <p><strong>ID:</strong> {activeBot.telegramUserId}</p>
-                <p><strong>Описание:</strong> {activeBot.description ?? '—'}</p>
-                <p><strong>Короткое описание:</strong> {activeBot.shortDescription ?? '—'}</p>
+              <div className="row">
+                <label>Скопировать настройки</label>
+                <select value={cloneFromBotId} onChange={(e) => setCloneFromBotId(e.target.value)}>
+                  <option value="">Не копировать</option>
+                  {bots.map((bot) => (
+                    <option key={bot.id} value={bot.id}>
+                      {bot.name ?? 'Без имени'} (@{bot.username ?? 'unknown'})
+                    </option>
+                  ))}
+                </select>
               </div>
-              {activeBot.lastError && (
-                <div className="alert warning">
-                  <strong>Последняя ошибка:</strong> {activeBot.lastError}
-                  {activeBot.lastErrorAtUtc && (
-                    <span className="muted"> ({new Date(activeBot.lastErrorAtUtc).toLocaleString()})</span>
-                  )}
-                </div>
-              )}
               <div className="flex">
-                <button
-                  onClick={() =>
-                    openConfirm('Поставить на паузу', 'Приостановить получение обновлений ботом?', () =>
-                      handleAction(() => pauseBot(activeBot.id), 'Бот поставлен на паузу.'),
-                    )
-                  }
-                >
-                  Пауза
+                <button className="primary" disabled={loading || !token.trim()} onClick={handleAdd}>
+                  Добавить и запустить
                 </button>
-                <button
-                  onClick={() =>
-                    openConfirm('Возобновить', 'Запустить бота снова?', () =>
-                      handleAction(() => resumeBot(activeBot.id), 'Бот активирован.'),
-                    )
-                  }
-                >
-                  Возобновить
-                </button>
-                <button
-                  onClick={() =>
-                    openConfirm('Отключить', 'Отключить бота до ручного включения?', () =>
-                      handleAction(() => disableBot(activeBot.id), 'Бот отключён.'),
-                    )
-                  }
-                >
-                  Отключить
-                </button>
-                <button
-                  onClick={() =>
-                    openConfirm('Перезапустить', 'Перезапустить бота с текущими настройками?', () =>
-                      handleAction(() => restartBot(activeBot.id), 'Бот перезапущен.'),
-                    )
-                  }
-                >
-                  Перезапуск
-                </button>
-                <button
-                  onClick={() =>
-                    openConfirm('Обновить данные', 'Обновить описание, команды и аватар?', async () => {
-                      const updated = await refreshBot(activeBot.id);
-                      setBots((prev) => prev.map((bot) => (bot.id === updated.id ? updated : bot)));
-                      await loadChannels(activeBot.id);
-                      setPhotoKey((prev) => prev + 1);
-                      setMessage('Данные обновлены.');
-                    })
-                  }
-                >
-                  Обновить данные
-                </button>
-                <button
-                  className="danger"
-                  onClick={() =>
-                    openConfirm('Удалить', 'Удалить бота и остановить его работу?', () =>
-                      handleAction(() => deleteBot(activeBot.id), 'Бот удалён.'),
-                    )
-                  }
-                >
-                  Удалить
+                <button className="ghost" onClick={loadBots} disabled={loading}>
+                  Обновить список
                 </button>
               </div>
+              {error && <p className="error">{error}</p>}
+              {message && <p className="success">{message}</p>}
             </div>
 
             <div className="card">
-              <h3>Профиль и команды</h3>
-              <div className="row">
-                <label>Имя бота</label>
-                <input value={profileName} onChange={(e) => setProfileName(e.target.value)} />
+              <h3>Список ботов</h3>
+              {loading && <p className="muted">Загрузка...</p>}
+              <div className="bot-list">
+                {bots.map((bot) => (
+                  <button
+                    key={bot.id}
+                    className={`bot-list-item ${activeBotId === bot.id ? 'active' : ''}`}
+                    onClick={() => setActiveBotId(bot.id)}
+                  >
+                    <div className="bot-list-title">
+                      <span className="badge">{statusLabels[bot.status] ?? 'Неизвестно'}</span>
+                      <strong>{bot.name ?? 'Без имени'}</strong>
+                    </div>
+                    <span className="muted">@{bot.username ?? 'unknown'}</span>
+                  </button>
+                ))}
+                {bots.length === 0 && <p className="muted">Боты ещё не добавлены.</p>}
               </div>
-              <div className="row">
-                <label>Описание</label>
-                <textarea value={profileDescription} onChange={(e) => setProfileDescription(e.target.value)} />
-              </div>
-              <div className="row">
-                <label>Короткое описание</label>
-                <textarea value={profileShortDescription} onChange={(e) => setProfileShortDescription(e.target.value)} />
-              </div>
-              <div className="row">
-                <label>Фото</label>
-                <input type="file" accept="image/*" onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)} />
-              </div>
-              <div className="row">
-                <label>Отслеживание сообщений</label>
-                <label className="toggle">
-                  <input
-                    type="checkbox"
-                    checked={trackMessagesEnabled}
-                    onChange={(e) => setTrackMessagesEnabled(e.target.checked)}
-                  />
-                  <span>{trackMessagesEnabled ? 'Включено' : 'Выключено'}</span>
-                </label>
-              </div>
-              <div className="card nested">
-                <h4>Команды/кнопки</h4>
-                {commands.length === 0 && <p className="muted">Команды не заданы.</p>}
-                {commands.map((cmd, idx) => (
-                  <div key={`${cmd.command}-${idx}`} className="command-row">
-                    <input
-                      placeholder="/command"
-                      value={cmd.command}
-                      onChange={(e) => {
-                        const next = [...commands];
-                        next[idx] = { ...next[idx], command: e.target.value };
-                        setCommands(next);
-                      }}
+            </div>
+          </div>
+
+          <div className="bots-main">
+            {activeBot ? (
+              <>
+                <div className="card">
+                  <div className="bot-profile">
+                    <img
+                      src={photoUrl ?? defaultAvatar}
+                      alt={activeBot.name ?? 'Bot'}
                     />
-                    <input
-                      placeholder="Описание"
-                      value={cmd.description}
-                      onChange={(e) => {
-                        const next = [...commands];
-                        next[idx] = { ...next[idx], description: e.target.value };
-                        setCommands(next);
-                      }}
-                    />
+                    <div>
+                      <h3>{activeBot.name ?? 'Без имени'}</h3>
+                      <p className="muted">@{activeBot.username ?? 'unknown'}</p>
+                      <p className={`badge ${statusColors[activeBot.status] ?? ''}`}>
+                        {statusLabels[activeBot.status] ?? 'Неизвестно'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="bot-meta">
+                    <p><strong>ID:</strong> {activeBot.telegramUserId}</p>
+                    <p><strong>Описание:</strong> {activeBot.description ?? '—'}</p>
+                    <p><strong>Короткое описание:</strong> {activeBot.shortDescription ?? '—'}</p>
+                  </div>
+                  {activeBot.lastError && (
+                    <div className="alert warning">
+                      <strong>Последняя ошибка:</strong> {activeBot.lastError}
+                      {activeBot.lastErrorAtUtc && (
+                        <span className="muted"> ({new Date(activeBot.lastErrorAtUtc).toLocaleString()})</span>
+                      )}
+                    </div>
+                  )}
+                  <div className="bot-actions">
                     <button
-                      className="ghost"
-                      onClick={() => setCommands((prev) => prev.filter((_, i) => i !== idx))}
+                      onClick={() =>
+                        openConfirm('Поставить на паузу', 'Приостановить получение обновлений ботом?', () =>
+                          handleAction(() => pauseBot(activeBot.id), 'Бот поставлен на паузу.'),
+                        )
+                      }
+                    >
+                      Пауза
+                    </button>
+                    <button
+                      onClick={() =>
+                        openConfirm('Возобновить', 'Запустить бота снова?', () =>
+                          handleAction(() => resumeBot(activeBot.id), 'Бот активирован.'),
+                        )
+                      }
+                    >
+                      Возобновить
+                    </button>
+                    <button
+                      onClick={() =>
+                        openConfirm('Отключить', 'Отключить бота до ручного включения?', () =>
+                          handleAction(() => disableBot(activeBot.id), 'Бот отключён.'),
+                        )
+                      }
+                    >
+                      Отключить
+                    </button>
+                    <button
+                      onClick={() =>
+                        openConfirm('Перезапустить', 'Перезапустить бота с текущими настройками?', () =>
+                          handleAction(() => restartBot(activeBot.id), 'Бот перезапущен.'),
+                        )
+                      }
+                    >
+                      Перезапуск
+                    </button>
+                    <button
+                      onClick={() =>
+                        openConfirm('Обновить данные', 'Обновить описание, команды и аватар?', async () => {
+                          const updated = await refreshBot(activeBot.id);
+                          setBots((prev) => prev.map((bot) => (bot.id === updated.id ? updated : bot)));
+                          await loadChannels(activeBot.id);
+                          await loadChats(activeBot.id);
+                          setPhotoKey((prev) => prev + 1);
+                          setMessage('Данные обновлены.');
+                        })
+                      }
+                    >
+                      Обновить данные
+                    </button>
+                    <button
+                      className="danger"
+                      onClick={() =>
+                        openConfirm(
+                          'Удалить',
+                          'Удалить бота и остановить его работу?',
+                          () => handleAction(() => deleteBot(activeBot.id), 'Бот удалён.'),
+                          { confirmLabel: 'Удалить', tone: 'danger' },
+                        )
+                      }
                     >
                       Удалить
                     </button>
                   </div>
-                ))}
-                <button className="ghost" onClick={() => setCommands((prev) => [...prev, { command: '', description: '' }])}>
-                  Добавить команду
-                </button>
-              </div>
-              <div className="flex">
-                <button className="primary" onClick={handleProfileSave} disabled={loading}>
-                  Сохранить профиль
-                </button>
-              </div>
-            </div>
-
-            <div className="card">
-              <h3>Каналы, где бот админ</h3>
-              {channels.length === 0 && <p className="muted">Нет доступных каналов.</p>}
-              {channels.map((channel) => (
-                <div key={channel.id} className="channel-card">
-                  <div className="channel-header">
-                    <strong>{channel.title}</strong>
-                    <span className="badge">{channel.isActive ? 'Активен' : 'Выключен'}</span>
-                  </div>
-                  <p className="muted">
-                    ID: {channel.telegramChatId}
-                    {channel.telegramUsername && <> • @{channel.telegramUsername}</>}
-                  </p>
-                  <ul className="list">
-                    <li>Модерация: {channel.moderationMode === 0 ? 'Авто' : 'С модерацией'}</li>
-                    <li>Спам‑фильтр: {channel.enableSpamFilter ? 'Включён' : 'Выключен'}</li>
-                    <li>Подписка: {channel.requireSubscription ? 'Требуется' : 'Не требуется'}</li>
-                    <li>Футер: {channel.footerLinkText} → {channel.footerLinkUrl}</li>
-                  </ul>
                 </div>
-              ))}
-            </div>
+
+                <div className="bot-details-grid">
+                  <div className="card">
+                    <h3>Профиль и команды</h3>
+                    <div className="row">
+                      <label>Имя бота</label>
+                      <input value={profileName} onChange={(e) => setProfileName(e.target.value)} />
+                    </div>
+                    <div className="row">
+                      <label>Описание</label>
+                      <textarea value={profileDescription} onChange={(e) => setProfileDescription(e.target.value)} />
+                    </div>
+                    <div className="row">
+                      <label>Короткое описание</label>
+                      <textarea value={profileShortDescription} onChange={(e) => setProfileShortDescription(e.target.value)} />
+                    </div>
+                    <div className="row">
+                      <label>Фото</label>
+                      <input type="file" accept="image/*" onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)} />
+                    </div>
+                    <div className="row">
+                      <label>Отслеживание сообщений</label>
+                      <label className="toggle">
+                        <input
+                          type="checkbox"
+                          checked={trackMessagesEnabled}
+                          onChange={(e) => setTrackMessagesEnabled(e.target.checked)}
+                        />
+                        <span>{trackMessagesEnabled ? 'Включено' : 'Выключено'}</span>
+                      </label>
+                    </div>
+                    <div className="card nested">
+                      <h4>Команды/кнопки</h4>
+                      {commands.length === 0 && <p className="muted">Команды не заданы.</p>}
+                      {commands.map((cmd, idx) => (
+                        <div key={`${cmd.command}-${idx}`} className="command-row">
+                          <input
+                            placeholder="/command"
+                            value={cmd.command}
+                            onChange={(e) => {
+                              const next = [...commands];
+                              next[idx] = { ...next[idx], command: e.target.value };
+                              setCommands(next);
+                            }}
+                          />
+                          <input
+                            placeholder="Описание"
+                            value={cmd.description}
+                            onChange={(e) => {
+                              const next = [...commands];
+                              next[idx] = { ...next[idx], description: e.target.value };
+                              setCommands(next);
+                            }}
+                          />
+                          <button
+                            className="ghost"
+                            onClick={() => setCommands((prev) => prev.filter((_, i) => i !== idx))}
+                          >
+                            Удалить
+                          </button>
+                        </div>
+                      ))}
+                      <button className="ghost" onClick={() => setCommands((prev) => [...prev, { command: '', description: '' }])}>
+                        Добавить команду
+                      </button>
+                    </div>
+                    <div className="flex">
+                      <button className="primary" onClick={handleProfileSave} disabled={loading}>
+                        Сохранить профиль
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="card">
+                    <h3>Каналы, где бот админ</h3>
+                    {channels.length === 0 && <p className="muted">Нет доступных каналов.</p>}
+                    {channels.map((channel) => (
+                      <div key={channel.id} className="channel-card">
+                        <div className="channel-header">
+                          <strong>{channel.title}</strong>
+                          <span className="badge">{channel.isActive ? 'Активен' : 'Выключен'}</span>
+                        </div>
+                        <p className="muted">
+                          ID: {channel.telegramChatId}
+                          {channel.telegramUsername && <> • @{channel.telegramUsername}</>}
+                        </p>
+                        <ul className="list">
+                          <li>Модерация: {channel.moderationMode === 0 ? 'Авто' : 'С модерацией'}</li>
+                          <li>Спам‑фильтр: {channel.enableSpamFilter ? 'Включён' : 'Выключен'}</li>
+                          <li>Подписка: {channel.requireSubscription ? 'Требуется' : 'Не требуется'}</li>
+                          <li>Футер: {channel.footerLinkText} → {channel.footerLinkUrl}</li>
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="card">
+                    <h3>Чаты и каналы с активностью</h3>
+                    <p className="muted">Показываем чаты/каналы, где бот получает сообщения или посты.</p>
+                    {chats.length === 0 && <p className="muted">Пока нет активности.</p>}
+
+                    {chatBuckets.channels.length > 0 && (
+                      <div className="chat-group">
+                        <h4>Каналы</h4>
+                        {chatBuckets.channels.map((chat) => (
+                          <div key={`${chat.chatId}-${chat.chatType}`} className="chat-card">
+                            <div className="chat-header">
+                              <strong>{chat.chatTitle ?? 'Без названия'}</strong>
+                              <span className="badge">Канал</span>
+                            </div>
+                            <p className="muted">
+                              ID: {chat.chatId} • Последнее сообщение: {new Date(chat.lastMessageAtUtc).toLocaleString()}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {chatBuckets.chats.length > 0 && (
+                      <div className="chat-group">
+                        <h4>Чаты</h4>
+                        {chatBuckets.chats.map((chat) => {
+                          const type = chat.chatType.toLowerCase();
+                          const typeLabel = type === 'supergroup'
+                            ? 'Супергруппа'
+                            : type === 'group'
+                              ? 'Группа'
+                              : 'Личный чат';
+                          return (
+                            <div key={`${chat.chatId}-${chat.chatType}`} className="chat-card">
+                              <div className="chat-header">
+                                <strong>{chat.chatTitle ?? 'Без названия'}</strong>
+                                <span className="badge">{typeLabel}</span>
+                              </div>
+                              <p className="muted">
+                                ID: {chat.chatId} • Последнее сообщение: {new Date(chat.lastMessageAtUtc).toLocaleString()}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="card muted">
+                Выберите бота слева, чтобы увидеть настройки и активность.
+              </div>
+            )}
           </div>
-        )}
+        </div>
 
         {confirm && (
           <ConfirmDialog
             title={confirm.title}
             body={confirm.body}
+            confirmLabel={confirm.confirmLabel}
+            tone={confirm.tone}
             onCancel={() => setConfirm(null)}
             onConfirm={async () => {
               const action = confirm.onConfirm;

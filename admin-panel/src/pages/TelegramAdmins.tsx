@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
 import ProtectedRoute from '../components/ProtectedRoute';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { TelegramAdmin, addTelegramAdmin, deactivateTelegramAdmin, getTelegramAdmins } from '../api';
 
 /**
@@ -20,6 +21,13 @@ function TelegramAdminsContent() {
   const [list, setList] = useState<TelegramAdmin[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<{
+    title: string;
+    body: string;
+    confirmLabel?: string;
+    tone?: 'primary' | 'danger';
+    onConfirm: () => Promise<void>;
+  } | null>(null);
 
   useEffect(() => {
     void load();
@@ -58,16 +66,23 @@ function TelegramAdminsContent() {
   }
 
   async function onDeactivate(telegramUserId: number) {
-    if (!confirm(`Деактивировать ${telegramUserId}?`)) return;
-    setError(null);
-    setMsg(null);
-    try {
-      await deactivateTelegramAdmin(telegramUserId);
-      setMsg('Деактивировано');
-      await load();
-    } catch (e: any) {
-      setError(e?.message ?? 'Ошибка');
-    }
+    setConfirm({
+      title: 'Деактивировать модератора',
+      body: `Модератор ${telegramUserId} больше не будет получать заявки.`,
+      confirmLabel: 'Деактивировать',
+      tone: 'danger',
+      onConfirm: async () => {
+        setError(null);
+        setMsg(null);
+        try {
+          await deactivateTelegramAdmin(telegramUserId);
+          setMsg('Деактивировано');
+          await load();
+        } catch (e: any) {
+          setError(e?.message ?? 'Ошибка');
+        }
+      },
+    });
   }
 
   return (
@@ -112,6 +127,21 @@ function TelegramAdminsContent() {
           </tbody>
         </table>
       </div>
+
+      {confirm && (
+        <ConfirmDialog
+          title={confirm.title}
+          body={confirm.body}
+          confirmLabel={confirm.confirmLabel}
+          tone={confirm.tone}
+          onCancel={() => setConfirm(null)}
+          onConfirm={async () => {
+            const action = confirm.onConfirm;
+            setConfirm(null);
+            await action();
+          }}
+        />
+      )}
     </>
   );
 }

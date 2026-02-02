@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Layout from '../components/Layout';
 import ProtectedRoute from '../components/ProtectedRoute';
+import ConfirmDialog from '../components/ConfirmDialog';
 import {
   ChannelDto,
   createChannel,
@@ -29,6 +30,13 @@ function ChannelsContent() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<{
+    title: string;
+    body: string;
+    confirmLabel?: string;
+    tone?: 'primary' | 'danger';
+    onConfirm: () => Promise<void>;
+  } | null>(null);
 
   const selected = useMemo(
     () => list.find(x => x.id === selectedId) ?? null,
@@ -146,19 +154,24 @@ function ChannelsContent() {
 
   async function onDeactivate() {
     if (!selected) return;
-    if (!confirm('Деактивировать канал?')) return;
-
-    setMsg(null);
-    setError(null);
-
-    try {
-      await deactivateChannel(selected.id);
-      setSelectedId(null);
-      setMsg('Канал деактивирован');
-      await load();
-    } catch (e: any) {
-      setError(e?.message ?? 'Ошибка');
-    }
+    setConfirm({
+      title: 'Деактивировать канал',
+      body: 'Канал перестанет принимать публикации и исчезнет из активных списков.',
+      confirmLabel: 'Деактивировать',
+      tone: 'danger',
+      onConfirm: async () => {
+        setMsg(null);
+        setError(null);
+        try {
+          await deactivateChannel(selected.id);
+          setSelectedId(null);
+          setMsg('Канал деактивирован');
+          await load();
+        } catch (e: any) {
+          setError(e?.message ?? 'Ошибка');
+        }
+      },
+    });
   }
 
   async function onPin() {
@@ -249,6 +262,21 @@ function ChannelsContent() {
         <div className="card muted">
           Выберите канал в таблице, чтобы закрепить кнопку или изменить настройки.
         </div>
+      )}
+
+      {confirm && (
+        <ConfirmDialog
+          title={confirm.title}
+          body={confirm.body}
+          confirmLabel={confirm.confirmLabel}
+          tone={confirm.tone}
+          onCancel={() => setConfirm(null)}
+          onConfirm={async () => {
+            const action = confirm.onConfirm;
+            setConfirm(null);
+            await action();
+          }}
+        />
       )}
     </>
   );

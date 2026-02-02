@@ -299,6 +299,32 @@ public sealed class BotsController : ControllerBase
     }
 
     /// <summary>
+    /// Получить чаты/каналы, в которых замечена активность бота.
+    /// </summary>
+    [HttpGet("{id:guid}/chats")]
+    public async Task<ActionResult<List<BotChatDto>>> GetBotChats(Guid id, CancellationToken ct)
+    {
+        var bot = await _db.TelegramBots.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (bot == null)
+            return NotFound(new { message = "Бот не найден." });
+
+        var chats = await _db.TelegramMessageLogs.AsNoTracking()
+            .Where(x => x.TelegramBotId == id)
+            .GroupBy(x => new { x.ChatId, x.ChatType, x.ChatTitle })
+            .Select(g => new BotChatDto
+            {
+                ChatId = g.Key.ChatId,
+                ChatType = g.Key.ChatType,
+                ChatTitle = g.Key.ChatTitle,
+                LastMessageAtUtc = g.Max(x => x.MessageDateUtc)
+            })
+            .OrderByDescending(x => x.LastMessageAtUtc)
+            .ToListAsync(ct);
+
+        return Ok(chats);
+    }
+
+    /// <summary>
     /// Обновить профиль и настройки бота.
     /// </summary>
     [HttpPut("{id:guid}/profile")]
@@ -439,6 +465,17 @@ public sealed class BotsController : ControllerBase
         public string FooterLinkText { get; set; } = string.Empty;
         public string FooterLinkUrl { get; set; } = string.Empty;
         public int? PinnedMessageId { get; set; }
+    }
+
+    /// <summary>
+    /// DTO чатов/каналов, где замечена активность.
+    /// </summary>
+    public sealed class BotChatDto
+    {
+        public long ChatId { get; set; }
+        public string ChatType { get; set; } = string.Empty;
+        public string? ChatTitle { get; set; }
+        public DateTime LastMessageAtUtc { get; set; }
     }
 
     /// <summary>

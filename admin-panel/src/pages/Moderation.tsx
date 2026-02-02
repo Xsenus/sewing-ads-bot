@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
 import ProtectedRoute from '../components/ProtectedRoute';
+import ConfirmDialog from '../components/ConfirmDialog';
 import {
   ModerationRequest,
   approveModeration,
@@ -38,6 +39,13 @@ function ModerationContent() {
 
   const [previewFor, setPreviewFor] = useState<string | null>(null);
   const [previewText, setPreviewText] = useState<string>('');
+  const [confirm, setConfirm] = useState<{
+    title: string;
+    body: string;
+    confirmLabel?: string;
+    tone?: 'primary' | 'danger';
+    onConfirm: () => Promise<void>;
+  } | null>(null);
 
   useEffect(() => {
     void load();
@@ -70,30 +78,44 @@ function ModerationContent() {
   }
 
   async function onApprove(id: string) {
-    if (!confirm('Одобрить и опубликовать?')) return;
-    setError(null);
-    setMsg(null);
-    try {
-      const res = await approveModeration(id);
-      setMsg(res.message);
-      await load();
-    } catch (e: any) {
-      setError(e?.message ?? 'Ошибка');
-    }
+    setConfirm({
+      title: 'Одобрить публикацию',
+      body: 'Объявление будет опубликовано в канал.',
+      confirmLabel: 'Одобрить',
+      tone: 'primary',
+      onConfirm: async () => {
+        setError(null);
+        setMsg(null);
+        try {
+          const res = await approveModeration(id);
+          setMsg(res.message);
+          await load();
+        } catch (e: any) {
+          setError(e?.message ?? 'Ошибка');
+        }
+      },
+    });
   }
 
   async function onReject(id: string) {
     const reason = prompt('Причина отклонения (необязательно)') ?? undefined;
-    if (!confirm('Отклонить заявку?')) return;
-    setError(null);
-    setMsg(null);
-    try {
-      const res = await rejectModeration(id, reason);
-      setMsg(res.message);
-      await load();
-    } catch (e: any) {
-      setError(e?.message ?? 'Ошибка');
-    }
+    setConfirm({
+      title: 'Отклонить заявку',
+      body: 'Заявка будет отклонена, пользователь получит уведомление.',
+      confirmLabel: 'Отклонить',
+      tone: 'danger',
+      onConfirm: async () => {
+        setError(null);
+        setMsg(null);
+        try {
+          const res = await rejectModeration(id, reason);
+          setMsg(res.message);
+          await load();
+        } catch (e: any) {
+          setError(e?.message ?? 'Ошибка');
+        }
+      },
+    });
   }
 
   return (
@@ -164,6 +186,21 @@ function ModerationContent() {
           <pre className="card" style={{ whiteSpace: 'pre-wrap' }}>{previewText}</pre>
           <button className="ghost" onClick={() => setPreviewFor(null)}>Закрыть</button>
         </div>
+      )}
+
+      {confirm && (
+        <ConfirmDialog
+          title={confirm.title}
+          body={confirm.body}
+          confirmLabel={confirm.confirmLabel}
+          tone={confirm.tone}
+          onCancel={() => setConfirm(null)}
+          onConfirm={async () => {
+            const action = confirm.onConfirm;
+            setConfirm(null);
+            await action();
+          }}
+        />
       )}
     </>
   );

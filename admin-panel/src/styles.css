@@ -73,6 +73,18 @@ a { color: inherit; }
   gap: 12px;
 }
 
+.sidebar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .nav a {
   display: flex;
   align-items: center;
@@ -80,8 +92,8 @@ a { color: inherit; }
   padding: 10px 12px;
   border-radius: 12px;
   text-decoration: none;
-  margin-bottom: 6px;
   background: var(--surface-alt);
+  min-height: 44px;
 }
 
 .container.collapsed .nav a {
@@ -100,13 +112,33 @@ a { color: inherit; }
 
 .nav-icon {
   font-size: 18px;
+  width: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.nav-text {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .container.collapsed .nav-text,
+.container.collapsed .sidebar-header h2,
 .container.collapsed .sidebar-header span,
 .container.collapsed .sidebar p,
 .container.collapsed .sidebar code {
   display: none;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .main {
@@ -323,6 +355,65 @@ code {
 
 .bot-meta p {
   margin: 6px 0;
+}
+
+.bots-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.bots-aside {
+  display: grid;
+  gap: 16px;
+}
+
+.bots-main {
+  display: grid;
+  gap: 16px;
+}
+
+.bot-details-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.bot-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.chat-card {
+  background: var(--surface-alt);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+
+.chat-group + .chat-group {
+  margin-top: 12px;
+}
+
+.chat-group h4 {
+  margin: 0 0 8px;
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+@media (max-width: 1100px) {
+  .bots-layout {
+    grid-template-columns: 1fr;
+  }
 }
 
 .list {
