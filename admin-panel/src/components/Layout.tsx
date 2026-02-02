@@ -22,6 +22,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   }, [collapsed]);
 
   const themeLabel = useMemo(() => (theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'), [theme]);
+  const themeIcon = useMemo(() => (theme === 'dark' ? '🌞' : '🌙'), [theme]);
 
   return (
     <div className={`container ${collapsed ? 'collapsed' : ''}`}>
@@ -31,9 +32,19 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <h2>SewingAdsBot</h2>
             <span className="muted">Панель управления</span>
           </div>
-          <button className="ghost icon-button" onClick={() => setCollapsed((prev) => !prev)}>
-            {collapsed ? '➡️' : '⬅️'}
-          </button>
+          <div className="sidebar-actions">
+            <button
+              className="ghost icon-button"
+              onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}
+              aria-label={themeLabel}
+              title={themeLabel}
+            >
+              {themeIcon}
+            </button>
+            <button className="ghost icon-button" onClick={() => setCollapsed((prev) => !prev)}>
+              {collapsed ? '➡️' : '⬅️'}
+            </button>
+          </div>
         </div>
         <div className="nav">
           <NavLink to="/" end>
@@ -72,10 +83,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
         <hr />
 
-        <div className="flex column">
-          <button className="ghost" onClick={() => setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))}>
-            {themeLabel}
-          </button>
+        <div className="sidebar-footer">
           <button
             className="danger"
             onClick={() => {

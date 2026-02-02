@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Layout from '../components/Layout';
 import ProtectedRoute from '../components/ProtectedRoute';
+import ConfirmDialog from '../components/ConfirmDialog';
 import {
   CategoryDto,
   ChannelDto,
@@ -32,6 +33,13 @@ function CategoriesContent() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<{
+    title: string;
+    body: string;
+    confirmLabel?: string;
+    tone?: 'primary' | 'danger';
+    onConfirm: () => Promise<void>;
+  } | null>(null);
 
   const selected = useMemo(
     () => cats.find(c => c.id === selectedId) ?? null,
@@ -108,19 +116,24 @@ function CategoriesContent() {
 
   async function onDelete() {
     if (!selected) return;
-    if (!confirm('Деактивировать категорию?')) return;
-
-    setMsg(null);
-    setError(null);
-
-    try {
-      await deleteCategory(selected.id);
-      setSelectedId(null);
-      setMsg('Категория деактивирована');
-      await load();
-    } catch (e: any) {
-      setError(e?.message ?? 'Ошибка удаления');
-    }
+    setConfirm({
+      title: 'Деактивировать категорию',
+      body: 'Категория будет скрыта из активных списков и не будет участвовать в публикациях.',
+      confirmLabel: 'Деактивировать',
+      tone: 'danger',
+      onConfirm: async () => {
+        setMsg(null);
+        setError(null);
+        try {
+          await deleteCategory(selected.id);
+          setSelectedId(null);
+          setMsg('Категория деактивирована');
+          await load();
+        } catch (e: any) {
+          setError(e?.message ?? 'Ошибка удаления');
+        }
+      },
+    });
   }
 
   return (
@@ -180,6 +193,21 @@ function CategoriesContent() {
         <div className="card muted">
           Выберите категорию в таблице, чтобы назначить ей каналы публикации.
         </div>
+      )}
+
+      {confirm && (
+        <ConfirmDialog
+          title={confirm.title}
+          body={confirm.body}
+          confirmLabel={confirm.confirmLabel}
+          tone={confirm.tone}
+          onCancel={() => setConfirm(null)}
+          onConfirm={async () => {
+            const action = confirm.onConfirm;
+            setConfirm(null);
+            await action();
+          }}
+        />
       )}
     </>
   );

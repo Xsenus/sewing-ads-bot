@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
 import ProtectedRoute from '../components/ProtectedRoute';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { AdminAccount, createAdminAccount, getAdminAccounts, resetAdminPassword, setAdminAccountActive } from '../api';
 
 /**
@@ -20,6 +21,13 @@ function AdminAccountsContent() {
   const [list, setList] = useState<AdminAccount[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<{
+    title: string;
+    body: string;
+    confirmLabel?: string;
+    tone?: 'primary' | 'danger';
+    onConfirm: () => Promise<void>;
+  } | null>(null);
 
   useEffect(() => {
     void load();
@@ -72,18 +80,25 @@ function AdminAccountsContent() {
   }
 
   async function onToggle(id: string, username: string, isActive: boolean) {
-    if (!confirm(`${isActive ? 'Отключить' : 'Включить'} ${username}?`)) return;
-
-    setError(null);
-    setMsg(null);
-
-    try {
-      await setAdminAccountActive(id, !isActive);
-      setMsg('Обновлено');
-      await load();
-    } catch (e: any) {
-      setError(e?.message ?? 'Ошибка');
-    }
+    setConfirm({
+      title: isActive ? 'Отключить пользователя' : 'Включить пользователя',
+      body: isActive
+        ? `Пользователь ${username} потеряет доступ к админке.`
+        : `Пользователь ${username} снова получит доступ к админке.`,
+      confirmLabel: isActive ? 'Отключить' : 'Включить',
+      tone: isActive ? 'danger' : 'primary',
+      onConfirm: async () => {
+        setError(null);
+        setMsg(null);
+        try {
+          await setAdminAccountActive(id, !isActive);
+          setMsg('Обновлено');
+          await load();
+        } catch (e: any) {
+          setError(e?.message ?? 'Ошибка');
+        }
+      },
+    });
   }
 
   return (
@@ -130,6 +145,21 @@ function AdminAccountsContent() {
           </tbody>
         </table>
       </div>
+
+      {confirm && (
+        <ConfirmDialog
+          title={confirm.title}
+          body={confirm.body}
+          confirmLabel={confirm.confirmLabel}
+          tone={confirm.tone}
+          onCancel={() => setConfirm(null)}
+          onConfirm={async () => {
+            const action = confirm.onConfirm;
+            setConfirm(null);
+            await action();
+          }}
+        />
+      )}
     </>
   );
 }

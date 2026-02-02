@@ -159,6 +159,16 @@ export type TelegramBot = {
 export type BotChannel = ChannelDto;
 
 /**
+ * Чаты/каналы с активностью.
+ */
+export type BotChat = {
+  chatId: number;
+  chatType: string;
+  chatTitle?: string | null;
+  lastMessageAtUtc: string;
+};
+
+/**
  * Логин и получение JWT.
  */
 export async function login(username: string, password: string): Promise<string> {
@@ -385,6 +395,10 @@ export async function deleteBot(id: string): Promise<{ message: string }> {
 
 export async function getBotChannels(id: string): Promise<BotChannel[]> {
   return await request<BotChannel[]>(`/api/admin/bots/${id}/channels`);
+}
+
+export async function getBotChats(id: string): Promise<BotChat[]> {
+  return await request<BotChat[]>(`/api/admin/bots/${id}/chats`);
 }
 
 export async function updateBotProfile(id: string, payload: {
